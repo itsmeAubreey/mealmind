@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Menu Builder{% endblock %}
+{% block content %}
+
+<style>
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+  .card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .card h2 { margin: 0 0 8px; }
+  .muted { color: #6b7280; font-size: 13px; }
+  .list { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .list th, .list td { border-bottom: 1px solid var(--line); padding: 10px 8px; }
+  .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef2f6; font-weight: 600; }
+  .ing-row { display: grid; grid-template-columns: 1fr 132px 110px 42px; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .qty-wrap { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .qty-wrap button { width: 42px; height: 42px; border: none; background: #eef2f6; font-weight: 700; cursor: pointer; }
+  .qty-wrap input { width: 100%; text-align: center; border: none; height: 42px; }
+  .btn-danger { background: #ef4444; color: #fff; border: none; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .flash.error { background: #fee2e2; border: 1px solid #fecaca; color: #7f1d1d; padding: 10px; border-radius: 8px; }
+  .flash.info { background: #e0ecff; border: 1px solid #bfdbfe; color: #1e3a8a; padding: 10px; border-radius: 8px; }
+
+  /* Tabs */
+  .nav-tabs { border-bottom: 2px solid #dee2e6; margin-bottom: 1rem; display: flex; gap: 8px; }
+  .nav-tabs button { border: none; background: #f3f4f6; color: #374151; padding: 10px 18px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: 500; transition: 0.2s; }
+  .nav-tabs button.active { background: #2563eb; color: white; font-weight: 600; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+</style>
+
+<h1>Menu Builder</h1>
+
+{% if editing %}
+  <div class="flash info">Editing menu: <strong>{{ current_menu.title }}</strong></div>
+{% endif %}
+
+{% if errors and errors|length %}
+  <div class="flash error">
+    <ul style="margin:0;padding-left:18px">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<div class="grid">
+  <!-- CREATE / EDIT MENU -->
+  <div class="card">
+    <h2>{{ 'Edit Menu' if editing else 'Create New Menu' }}</h2>
+    <p class="muted">Build a reusable menu for a meal. Ingredients come from your Inventory.</p>
+
+    <form method="post" action="{{ url_for('menu_builder_edit', menu_id=current_menu.id) if editing else url_for('menu_builder') }}">
+      <div class="form-group">
+        <label>Meal Type</label>
+        <select name="meal_type" class="form-control" required>
+          {% set mt_value = current_menu.meal_type if editing else (values.meal_type if values else '') %}
+          <option value="" disabled {{ 'selected' if not mt_value }}>— Select meal —</option>
+          {% for mt in ['Breakfast','Lunch','Dinner'] %}
+            <option value="{{ mt }}" {{ 'selected' if mt_value==mt }}>{{ mt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Menu Title</label>
+        <input name="title" class="form-control" placeholder="e.g., Continental Breakfast 1" required
+               value="{{ current_menu.title if editing else (values.title if values else '') }}">
+      </div>
+
+      <div class="form-group">
+        <label>Description (optional)</label>
+        <textarea name="description" class="form-control" rows="2" placeholder="Short note...">{{ current_menu.description if editing else (values.description if values else '') }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Ingredients</label>
+        <div id="ing-list"></div>
+        <button type="button" id="btn-add-ing" class="btn btn-secondary">+ Add Ingredient</button>
+        <div class="muted" style="margin-top:6px">Quantities should match the unit defined in Inventory.</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">{{ 'Save Changes' if editing else 'Save Menu' }}</button>
+        {% if editing %}
+          <a class="btn btn-secondary" href="{{ url_for('menu_builder') }}">Cancel</a>
+        {% else %}
+          <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
+        {% endif %}
+      </div>
+
+      <!-- hidden template for ingredient row -->
+      <template id="tpl-ing-row">
+        <div class="ing-row">
+          <select name="ingredient_id" class="form-control" required>
+            <option value="" disabled selected>Choose item…</option>
+            {% for it in inventory_items %}
+              <option value="{{ it.id }}" data-unit="{{ it.unit }}">{{ it.name }} ({{ it.unit }})</option>
+            {% endfor %}
+          </select>
+
+          <div class="qty-wrap">
+            <button type="button" class="btn-dec">−</button>
+            <input name="quantity" type="number" step="any" min="0" value="0" required>
+            <button type="button" class="btn-inc">+</button>
+          </div>
+
+          <input class="form-control unit-display" value="unit" disabled>
+          <button type="button" class="btn-danger btn-del" title="Remove">×</button>
+        </div>
+      </template>
+    </form>
+
+    <p style="margin-top:14px;">
+      ← <a href="{{ url_for('dashboard') }}">Back to Dashboard</a> |
+      <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
+    </p>
+  </div>
+
+       <!-- EXISTING MENUS WITH TABS -->
+  <div class="card">
+    <h2>Existing Menus</h2>
+    <p class="muted">Saved reusable menus grouped by meal.</p>
+
+    <!-- Tabs -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-tab="breakfast">Breakfast</button>
+      <button class="tab-btn" data-tab="lunch">Lunch</button>
+      <button class="tab-btn" data-tab="dinner">Dinner</button>
+    </div>
+
+    <!-- Tab Contents -->
+    {% for meal_type in ['Breakfast','Lunch','Dinner'] %}
+    <div class="tab-pane {% if loop.first %}active{% endif %}" id="{{ meal_type|lower }}">
+      {% set filtered = menus | selectattr('meal_type', 'equalto', meal_type) | list %}
+      {% if filtered %}
+      <table class="list">
+        <thead>
+          <tr><th>Meal</th><th>Title</th><th>Items</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for m in filtered %}
+          <tr>
+            <td><span class="pill">{{ m.meal_type }}</span></td>
+            <td>{{ m.title }}</td>
+            <td style="text-align:center">{{ m.ingredients|length }}</td>
+            <td>
+              <a class="btn btn-secondary" href="{{ url_for('menu_builder_edit', menu_id=m.id) }}">Edit</a>
+              <form method="post" action="{{ url_for('menu_builder_delete', menu_id=m.id) }}" style="display:inline"
+                    onsubmit="return confirm('Delete menu {{ m.title }}?');">
+                <button class="btn-danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No {{ meal_type.lower() }} menus yet.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+
+<script>
+  const list  = document.querySelector("#ing-list");
+  const tpl   = document.querySelector("#tpl-ing-row");
+  const addBtn= document.querySelector("#btn-add-ing");
+
+  function wireRow(row, selectedId=null, quantity=0){
+    const sel = row.querySelector('select[name="ingredient_id"]');
+    const qty = row.querySelector('input[name="quantity"]');
+    const unitBox = row.querySelector('.unit-display');
+
+    function updateUnit(){ unitBox.value = sel.selectedOptions[0]?.dataset.unit || 'unit'; }
+    sel.addEventListener('change', updateUnit);
+
+    row.querySelector('.btn-del').addEventListener('click', ()=> row.remove());
+    row.querySelector('.btn-inc').addEventListener('click', ()=> { qty.value = (+qty.value||0) + 1; });
+    row.querySelector('.btn-dec').addEventListener('click', ()=> { qty.value = Math.max(0, (+qty.value||0) - 1); });
+
+    if (selectedId) sel.value = String(selectedId);
+    if (quantity)   qty.value = quantity;
+    updateUnit();
+  }
+
+  function addRow(prefill=null){
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    wireRow(node, prefill?.id, prefill?.qty);
+    list.appendChild(node);
+  }
+
+  addBtn?.addEventListener('click', ()=> addRow());
+
+  {% if editing %}
+  const existing = [
+    {% for ing in current_menu.ingredients %}
+    {"id": {{ ing.inventory_id }}, "qty": {{ ing.quantity|float }}, "name": "{{ ing.name|e }}", "unit": "{{ ing.unit|e }}"}{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+  if (existing.length){ existing.forEach(x => addRow(x)); } else { addRow(); }
+  {% else %}
+  addRow();
+  {% endif %}
+
+  // Tab Switching
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panes = document.querySelectorAll('.tab-pane');
+  tabs.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      tabs.forEach(b=>b.classList.remove('active'));
+      panes.forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
+    });
+  });
+</script>
+
+{% endblock %}

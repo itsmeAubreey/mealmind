@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Login{% endblock %}
+{% block content %}
+<h1 style="margin-bottom:16px;">Login</h1>
+
+{% if error %}
+  <div style="background:#fdecea;color:#b71c1c;border:1px solid #f5c6c6;padding:10px 12px;border-radius:8px;margin-bottom:14px;">
+    {{ error }}
+  </div>
+{% endif %}
+
+<form method="post" class="form-grid">
+  <label for="username">Username</label>
+  <input id="username" name="username" autofocus required>
+
+  <label for="password">Password</label>
+  <input id="password" type="password" name="password" required>
+</form>
+
+<div style="margin-top:14px;">
+  <button class="btn" onclick="this.closest('body').querySelector('form').submit()">Login</button>
+  <a class="btn secondary" href="#" aria-disabled="true" onclick="return false;">Forgot Password?</a>
+</div>
+{% endblock %}

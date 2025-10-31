@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Residents{% endblock %}
+{% block content %}
+
+<style>
+  /* Page wrapper to scope our overrides */
+  .res-wrap * { box-sizing: border-box; }
+
+  /* Force true table rendering regardless of base styles */
+  .res-wrap table,
+  .res-wrap thead,
+  .res-wrap tbody,
+  .res-wrap tr,
+  .res-wrap th,
+  .res-wrap td { display: table; }
+  .res-wrap table           { width:100%; border-collapse: collapse; table-layout: fixed; }
+  .res-wrap thead tr,
+  .res-wrap tbody tr        { display: table-row; }
+  .res-wrap th,
+  .res-wrap td              { display: table-cell; vertical-align: middle; border-bottom:1px solid var(--line); padding:14px 12px; }
+  .res-wrap thead th        { background:#eef2f6; font-weight:700; }
+
+  /* Fixed column widths (adjust if you like) */
+  .col-fn   { width:140px; }
+  .col-ln   { width:140px; }
+  .col-age  { width:70px;  text-align:center; }
+  .col-bday { width:120px; }
+  .col-meds { width:260px; }
+  .col-ill  { width:180px; }
+  .col-all  { width:200px; }
+  .col-flu  { width:90px;  }
+  .col-diet { width:120px; }
+  .col-act  { width:220px; } /* smaller now that Delete is removed */
+
+  /* Single-line with ellipsis for compact columns */
+  .nowrap { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Clamp long text in heavy columns to keep rows tidy */
+  .clamp{
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+    overflow: hidden;
+  }
+
+  /* Action buttons on one line, right aligned */
+  .action-row{ display:flex; gap:12px; justify-content:flex-end; align-items:center; white-space:nowrap; }
+  .action-row form{ margin:0; }
+  .btn{ min-height:42px; }
+
+  /* Print icon button */
+  .icon-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:42px; height:42px; border-radius:8px;
+    background: var(--btn-bg, #1e66d0); color:#fff; border:none; text-decoration:none;
+  }
+  .icon-btn:hover{ filter:brightness(.95); }
+  .icon-btn svg{ width:20px; height:20px; fill:currentColor; }
+
+  /* Guard against long words elsewhere */
+  td{ overflow-wrap:anywhere; }
+</style>
+
+<div class="res-wrap">
+  {% set role = session.get('user', {}).get('role') %}
+
+  <h1>Residents</h1>
+
+  <form method="get" style="margin-bottom:16px;">
+    <div class="row">
+      <input id="q" name="q" class="form-control" value="{{ q or '' }}"
+            placeholder="Search by name, diet, allergies, etc." style="flex:1;">
+      <button class="btn btn-primary" type="submit">Filter</button>
+      <a class="btn btn-secondary" href="{{ url_for('residents_list') }}">Clear</a>
+    </div>
+  </form>
+
+  {% if role in ['Manager','Dietitian'] %}
+    <p><a class="btn btn-primary" href="{{ url_for('residents_new') }}">+ New Resident</a></p>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-fn">First Name</th>
+        <th class="col-ln">Last Name</th>
+        <th class="col-age">Age</th>
+        <th class="col-bday">Birthday</th>
+        <th class="col-meds">Medications/Vitamins</th>
+        <th class="col-ill">Illnesses</th>
+        <th class="col-all">Allergies (Food Only)</th>
+        <th class="col-flu">Fluids</th>
+        <th class="col-diet">Diet</th>
+        <th class="col-act">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in residents %}
+      <tr>
+        <td class="nowrap col-fn">{{ r.first_name }}</td>
+        <td class="nowrap col-ln">{{ r.last_name }}</td>
+        <td class="nowrap col-age">{{ age(r.birthday) }}</td>
+        <td class="nowrap col-bday">{{ r.birthday.strftime('%Y-%m-%d') if r.birthday else '' }}</td>
+        <td class="clamp  col-meds">{{ r.medications }}</td>
+        <td class="clamp  col-ill">{{ r.illnesses }}</td>
+        <td class="clamp  col-all">{{ r.allergies }}</td>
+        <td class="nowrap col-flu">{{ r.fluids }}</td>
+        <td class="nowrap col-diet">{{ r.diet }}</td>
+        <td class="col-act">
+          <div class="action-row">
+            {% if role in ['Manager','Dietitian'] %}
+              <a class="btn" href="{{ url_for('residents_edit', rid=r.id) }}">Edit</a>
+              {# Delete is now moved inside the Edit page; not shown here #}
+            {% endif %}
+            <!-- Auto-print: open the print view in a new tab with ?auto=1 -->
+            <a class="icon-btn" title="Print" aria-label="Print"
+               href="{{ url_for('resident_print', rid=r.id, auto=1) }}" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                <path d="M6 9V3h12v6h2a2 2 0 0 1 2 2v6h-4v4H8v-4H4v-6a2 2 0 0 1 2-2Zm2-4v4h8V5H8Zm0 12v2h8v-2H8Zm12-6H4v4h3v-2h10v2h3v-4Z"/>
+              </svg>
+            </a>
+          </div>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="10">No residents found.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <p style="margin-top:14px;">
+    ← <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+  </p>
+</div>
+{% endblock %}

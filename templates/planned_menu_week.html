@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Planned Menus{% endblock %}
+
+{% block content %}
+<div class="card" style="padding:20px;">
+  <h2 style="margin-bottom:10px;">Planned Menu for the Week</h2>
+  <p>
+    Service for {{ week_start.strftime('%m/%d/%y') }} to {{ week_end.strftime('%m/%d/%y') }}
+  </p>
+
+  <!-- Week navigation -->
+  <div style="display:flex; justify-content:space-between; margin:15px 0;">
+    <a class="btn btn-secondary" href="{{ prev_url }}">← Previous Week</a>
+    <a class="btn btn-secondary" href="{{ next_url }}">Next Week →</a>
+  </div>
+
+  <table border="1" width="100%" style="border-collapse:collapse; text-align:center;">
+    <tr>
+      <th style="background:#f0f0f0;">Meal</th>
+      {% for d in days %}
+        <th style="background:#f0f0f0;">{{ d.dow }}</th>
+      {% endfor %}
+    </tr>
+
+    {% set meals = ["Breakfast", "Lunch", "Dinner"] %}
+    {% for meal in meals %}
+      <tr>
+        <th style="background:#f7f7f7; text-align:left; padding:6px 10px;">{{ meal }}</th>
+        {% for d in days %}
+          {% set day_obj = d.date %}
+          <td style="padding:6px 8px;">
+            {% set items = grouped.get(day_obj, {}).get(meal, []) %}
+            {% if items and items|length > 0 %}
+              {% for it in items %}
+                <div>{{ it.menu_title }}</div>
+
+
+                
+              {% endfor %}
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+<hr class="my-4">
+
+<div class="bottom-links">
+  <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
+  <span class="sep">|</span>
+  <a href="{{ url_for('menu_hub') }}" class="back-link">Go to Menu Dashboard</a>
+</div>
+
+<style>
+  .bottom-links{
+    margin: 8px 0 4px;
+    text-align: left;                /* left-aligned like your screenshot */
+  }
+  .bottom-links .back-link{
+    color: #2563eb;                  /* link blue */
+    text-decoration: underline;
+    font-weight: 600;
+  }
+  .bottom-links .back-link:hover{
+    color: #1e40af;                  /* darker on hover */
+    text-decoration: underline;
+  }
+  .bottom-links .sep{
+    margin: 0 .5rem;
+    color: #64748b;                  /* subtle gray for the bar */
+  }
+</style>
+
+
+{% endblock %}

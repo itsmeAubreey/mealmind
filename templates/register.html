@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Create Account</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:40px}
+    .card{max-width:420px;margin:auto;border:1px solid #ddd;border-radius:10px;padding:24px}
+    .error{background:#ffecec;border:1px solid #f5aca6;padding:10px;margin-bottom:12px;border-radius:6px}
+    label{display:block;margin-top:10px}
+    input,select{width:100%;padding:8px;margin-top:4px}
+    button{margin-top:16px;padding:10px 16px}
+    a{display:inline-block;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Create your account</h2>
+
+    {% if errors %}
+      <div class="error">
+        <ul>
+          {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post">
+      <label>Username
+        <input name="username" value="{{ values.username or '' }}" autocomplete="username" required>
+      </label>
+
+      <label>Password
+        <input type="password" name="password" autocomplete="new-password" required>
+      </label>
+
+      <label>Confirm Password
+        <input type="password" name="confirm" autocomplete="new-password" required>
+      </label>
+
+      <label>Role
+        <select name="role" required>
+          <option value="" disabled selected>Select role</option>
+          {% for r in roles %}
+            <option value="{{ r }}" {% if values.role==r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <button type="submit">Create account</button>
+    </form>
+
+    <a href="{{ url_for('login') }}">Already have an account? Sign in</a>
+  </div>
+</body>
+</html>

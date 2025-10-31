@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<style>
+  .wrap { max-width: 1200px; margin: 0 auto; }
+
+  .dash-head { margin: 8px 0 22px; }
+  .muted { color:#6b7280; }
+
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+    gap: 18px;
+  }
+  @media (max-width: 1100px) {
+    .tiles { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .tiles { grid-template-columns: 1fr; }
+  }
+
+  .tile {
+    display: block;
+    border-radius: 16px;
+    color: #fff;
+    text-decoration: none;
+    padding: 18px 18px 20px;
+    box-shadow: 0 16px 36px rgba(0,0,0,.12);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+  }
+  .tile:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 46px rgba(0,0,0,.16);
+    filter: brightness(1.02);
+  }
+
+  .tile-head { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  .tile-icon {
+    width:42px; height:42px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    background: rgba(255,255,255,.18); font-size:22px;
+  }
+  .tile h2 { margin:0; font-size:24px; color:#fff; }
+  .tile p  { margin:0; opacity:.95; }
+
+  .purple { background: linear-gradient(135deg,#6d5efc,#7b61f6,#8a66f0); }
+  .green  { background: linear-gradient(135deg,#00c17a,#11cb90,#26d4a3); }
+  .blue   { background: linear-gradient(135deg,#1e3a8a,#3352c6,#3b82f6); }
+  .red    { background: linear-gradient(135deg,#b2103a,#c31845,#d12352); }
+</style>
+
+<div class="wrap">
+  <div class="dash-head text-center">
+    <p style="font-size: 1.25rem; color: #555; margin-top: 3.5rem;">
+       Welcome, <strong>{{ current_user.first_name }} {{ current_user.last_name }}</strong> · Role: <strong>{{ current_user.role }}</strong>
+    </p>
+  </div>
+
+  <div class="tiles">
+    <!-- Residents (everyone) -->
+    <a class="tile purple" href="{{ url_for('residents_list') }}">
+      <div class="tile-head">
+        <div class="tile-icon">👥</div>
+        <h2>Residents</h2>
+      </div>
+      <p>Manage resident details &amp; print cards.</p>
+    </a>
+
+    <!-- Inventory (everyone) -->
+    <a class="tile green" href="{{ url_for('inventory_list') }}">
+      <div class="tile-head">
+        <div class="tile-icon">📦</div>
+        <h2>Inventory</h2>
+      </div>
+      <p>Track stock &amp; supplies.</p>
+    </a>
+
+    <!-- Menu: Dietary Aide → Planned Menu; others → Menu Hub -->
+    {% if current_user.role == 'Dietary Aide' %}
+      <a class="tile blue" href="{{ url_for('planned_menus') }}">
+        <div class="tile-head">
+          <div class="tile-icon">🍽️</div>
+          <h2>Menu</h2>
+        </div>
+        <p>View weekly planned menus.</p>
+      </a>
+    {% else %}
+      <a class="tile blue" href="{{ url_for('menu_hub') }}">
+        <div class="tile-head">
+          <div class="tile-icon">🍽️</div>
+          <h2>Menu</h2>
+        </div>
+        <p>Plan menus &amp; schedule meals.</p>
+      </a>
+    {% endif %}
+
+    <!-- Staff: Managers only -->
+    {% if current_user.role == 'Manager' %}
+      <a class="tile red" href="{{ url_for('staff_list') }}">
+        <div class="tile-head">
+          <div class="tile-icon">📊</div>
+          <h2>Staff</h2>
+        </div>
+        <p>Add &amp; manage employees.</p>
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

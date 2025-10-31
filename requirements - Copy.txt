@@ -1,0 +1,6 @@
+# Core web framework
+Flask>=3.0,<4.0
+# Template engine (Flask depends on this but pin explicitly)
+Jinja2>=3.1,<4.0
+# Optional data handling (you can remove if not needed)
+pandas>=2.0,<3.0

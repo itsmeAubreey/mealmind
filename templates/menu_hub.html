@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Menu Hub{% endblock %}
+
+{% block content %}
+<style>
+  .hub-container{max-width:1280px;margin:0 auto;padding:2rem 1rem 2.5rem}
+  .hub-title{font-size:clamp(1.9rem,2.2vw,2.4rem);font-weight:800;letter-spacing:.5px;margin-bottom:.25rem}
+  .hub-subtitle{color:#6b7280;margin-bottom:1.75rem}
+  .hub-grid{display:grid;grid-template-columns:repeat(3,minmax(320px,1fr));gap:24px}
+  @media (max-width:1100px){.hub-grid{grid-template-columns:repeat(2,minmax(280px,1fr))}}
+  @media (max-width:680px){.hub-grid{grid-template-columns:1fr}}
+  .tile{display:flex;flex-direction:column;justify-content:space-between;border-radius:16px;background:#fff;box-shadow:0 10px 24px rgba(2,6,23,.06);border:1px solid rgba(2,6,23,.05);transition:.2s;min-height:220px;padding:22px}
+  .tile:hover{transform:translateY(-3px);box-shadow:0 16px 32px rgba(2,6,23,.12)}
+  .tile-title{font-size:1.25rem;font-weight:700;margin:2px 0 8px}
+  .tile-desc{color:#4b5563;line-height:1.45;margin-bottom:16px;flex:1 1 auto}
+  .tile-actions{display:flex;gap:10px}
+  .btn-primary{display:inline-flex;align-items:center;gap:.5rem;background:#1d4ed8;color:#fff!important;padding:10px 16px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid transparent;transition:background .15s,box-shadow .15s,transform .05s}
+  .btn-primary:hover{background:#1643be;box-shadow:0 8px 18px rgba(29,78,216,.25)}
+  .btn-link-soft{color:#1d4ed8;text-decoration:none;font-weight:600;margin-top:20px;display:inline-block}
+  .btn-link-soft:hover{text-decoration:underline}
+  .chip{display:inline-block;padding:6px 10px;border-radius:999px;font-size:.8rem;font-weight:700;letter-spacing:.2px;color:#0b1220;background:#eef2ff;border:1px solid #e5e7eb}
+</style>
+
+<div class="hub-container">
+  <h1 class="hub-title">Menu Hub</h1>
+  {% if current_user.role == 'Dietary Aide' %}
+    <div class="hub-subtitle">You can view the weekly plan below.</div>
+  {% else %}
+    <div class="hub-subtitle">Create, schedule, and review menus.</div>
+  {% endif %}
+
+  <div class="hub-grid">
+
+    {# Show Scheduler only for Manager/Dietitian/Cook #}
+    {% if current_user.role in ['Manager','Dietitian','Cook'] %}
+    <div class="tile">
+      <div>
+        <div class="chip">Schedule &amp; Deduct</div>
+        <div class="tile-title">Menu Scheduler</div>
+        <div class="tile-desc">
+          Pick a date, choose saved menus per meal, tweak quantities, and deduct inventory automatically.
+        </div>
+      </div>
+      <div class="tile-actions">
+        <a class="btn-primary" href="{{ url_for('menu_scheduler') }}">Open Scheduler</a>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Show Builder only for Manager/Dietitian/Cook #}
+    {% if current_user.role in ['Manager','Dietitian','Cook'] %}
+    <div class="tile">
+      <div>
+        <div class="chip">Create &amp; Reuse</div>
+        <div class="tile-title">Menu Builder</div>
+        <div class="tile-desc">
+          Create reusable menus (Breakfast / Lunch / Dinner) with ingredients from Inventory. Edit or delete later.
+        </div>
+      </div>
+      <div class="tile-actions">
+        <a class="btn-primary" href="{{ url_for('menu_builder') }}">Open Builder</a>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Always show Planned Menus to everyone #}
+    <div class="tile">
+      <div>
+        <div class="chip">Saved Schedules</div>
+        <div class="tile-title">Planned Menus (Saved)</div>
+        <div class="tile-desc">
+          Browse the weekly grid of scheduled Breakfast/Lunch/Dinner. Click a day to see details.
+        </div>
+      </div>
+      <div class="tile-actions">
+        <a class="btn-primary" href="{{ url_for('planned_menus') }}">View Planned Menus</a>
+      </div>
+    </div>
+
+  </div>
+
+  <a href="{{ url_for('dashboard') }}" class="btn-link-soft">← Back to Dashboard</a>
+</div>
+{% endblock %}

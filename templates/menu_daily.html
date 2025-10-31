@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Daily Menus{% endblock %}
+{% block content %}
+<h1>Daily Menus</h1>
+
+<form method="get" class="row" style="gap:8px;align-items:center;margin:8px 0 14px">
+  <label>From</label>
+  <input type="date" name="start" value="{{ start.strftime('%Y-%m-%d') if start else '' }}">
+  <label>To</label>
+  <input type="date" name="end" value="{{ end.strftime('%Y-%m-%d') if end else '' }}">
+  <button class="btn btn-primary" type="submit">Filter</button>
+  <a class="btn btn-secondary" href="{{ url_for('menu_daily') }}">Clear</a>
+</form>
+
+{% if not days %}
+  <p>No daily menus found.</p>
+{% else %}
+  {% for d, entries in days.items() %}
+    <div class="card" style="margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff">
+      <h3 style="margin:0 0 8px">{{ d.strftime('%Y-%m-%d') }}</h3>
+      <ul style="margin:0;padding-left:18px">
+        {% for e in entries %}
+          <li>
+            <strong>{{ e.meal_type }}</strong> — {{ e.title or '(untitled)' }}
+            <a href="{{ url_for('menu_daily_view', day_str=d.strftime('%Y-%m-%d')) }}" style="margin-left:8px">View</a>
+          </li>
+        {% endfor %}
+      </ul>
+      {% if loop.first %}
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+<p><a href="{{ url_for('menu_page') }}">← Back to Menu entry</a></p>
+{% endblock %}

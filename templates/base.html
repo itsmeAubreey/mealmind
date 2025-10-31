@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{% block title %}{% endblock %} — MealMind</title>
+
+    <!-- Basic reset + layout -->
+    <style>
+      :root{
+        --brand:#0e47a1;          /* top bar blue */
+        --brand-btn:#195acb;      /* logout button */
+        --brand-btn-h:#1f66e6;
+        --bg:#f6f8fb;
+        --card:#ffffff;
+        --text:#1f2937;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif}
+
+      /* ===== Top Bar (forced left/right) ===== */
+      header#mm-topbar{background:var(--brand); color:#fff; box-shadow:0 1px 0 rgba(0,0,0,.06)}
+      #mm-topbar .mm-row{
+        max-width:1200px; margin:0 auto; padding:12px 20px;
+        display:flex !important; align-items:center !important;
+        justify-content:space-between !important; gap:16px;
+        width:100%;
+      }
+      #mm-topbar .mm-brand{
+        display:flex; align-items:center; gap:10px;
+        color:#fff; text-decoration:none; white-space:nowrap;
+      }
+      #mm-topbar .mm-mark{width:28px;height:28px;display:block}
+      #mm-topbar .mm-text{font-weight:800; letter-spacing:.2px; font-size:20px}
+
+      #mm-topbar .mm-logout{
+        background:var(--brand-btn); color:#fff; text-decoration:none;
+        padding:10px 16px; border-radius:12px; font-weight:600;
+        display:inline-flex; align-items:center; gap:8px;
+      }
+      #mm-topbar .mm-logout:hover{background:var(--brand-btn-h)}
+      /* kill any center rules from other styles */
+      #mm-topbar, #mm-topbar *{text-align:initial !important}
+
+      /* ===== Page container ===== */
+      main#mm-main{max-width:1200px;margin:28px auto;padding:0 20px}
+      .flash{padding:12px 14px;border-radius:10px;margin:12px 0;font-weight:600}
+      .flash.success{background:#e8f7ee;color:#136f3a}
+      .flash.error{background:#fde8e8;color:#9b1c1c}
+      .flash.info{background:#eef2ff;color:#1e3a8a}
+
+      /* Optional: buttons/links look consistent */
+      a.btn{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none}
+    </style>
+
+    {% block head_extra %}{% endblock %}
+  </head>
+
+  <body>
+    <!-- ===== Header ===== -->
+    <header id="mm-topbar">
+      <div class="mm-row">
+        <a class="mm-brand" href="{{ url_for('dashboard') }}">
+          <img src="{{ url_for('static', filename='img/mealmind-mark.svg') }}" alt="MealMind" class="mm-mark">
+          <span class="mm-text">MealMind</span>
+        </a>
+
+        {% if session.get('user') %}
+          <a class="mm-logout" href="{{ url_for('logout') }}">↦ Logout</a>
+        {% endif %}
+      </div>
+    </header>
+    <!-- ===== /Header ===== -->
+
+    <main id="mm-main">
+      <!-- Flash messages -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Daily Menu {{ day.strftime('%Y-%m-%d') }}{% endblock %}
+{% block content %}
+<h1>Daily Menu — {{ day.strftime('%Y-%m-%d') }}</h1>
+
+<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+  {% for e in entries %}
+    <div class="card" style="padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff">
+      <h2 style="margin:0 0 6px">{{ e.meal_type }}</h2>
+      <p><strong>{{ e.title or '(untitled)' }}</strong></p>
+      {% if e.description %}
+        <p style="white-space:pre-wrap">{{ e.description }}</p>
+      {% endif %}
+      <h4>Ingredients</h4>
+      <ul style="margin:0;padding-left:18px">
+        {% for i in e.ingredients %}
+          <li>{{ i.name }}: {{ "%.2f"|format(i.quantity) if i.quantity is not none else "" }} {{ i.unit }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+</div>
+
+<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+  <a class="btn btn-secondary" href="{{ url_for('menu_daily') }}">Back to list</a>
+  <form method="post" action="{{ url_for('menu_daily_delete', day_str=day.strftime('%Y-%m-%d')) }}"
+        onsubmit="return confirm('Delete all menus for {{ day.strftime('%Y-%m-%d') }}?');">
+    <button class="btn btn-danger" type="submit">Delete this day</button>
+  </form>
+  <form method="post" action="{{ url_for('menu_apply') }}">
+    <input type="hidden" name="day" value="{{ day.strftime('%Y-%m-%d') }}">
+    <button class="btn btn-primary" type="submit">Apply (Deduct Inventory)</button>
+  </form>
+</div>
+{% endblock %}

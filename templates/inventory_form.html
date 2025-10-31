@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Item' if mode=='edit' else 'New Item' }}{% endblock %}
+{% block content %}
+
+{% set limited = limited or false %} {# true when Dietary Aide editing (quantity only) #}
+{% set v = values or {} %}
+
+<h1>{{ 'Edit Item' if mode=='edit' else 'New Item' }}</h1>
+
+{% if errors and errors|length %}
+  <div class="alert alert-danger">
+    <ul class="mb-0">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form method="post" class="form-narrow">
+
+  <div class="form-group">
+    <label for="name">Item Name</label>
+    <input id="name" name="name" class="form-control"
+           value="{{ (v.name if v.name is defined else v.get('name','')) if v else '' }}"
+           {{ 'disabled' if limited else '' }}>
+  </div>
+
+  <div class="form-group">
+    <label for="unit">Unit</label>
+    <select id="unit" name="unit" class="form-control" {{ 'disabled' if limited else '' }}>
+      {% for u in units %}
+        {% set cur = (v.unit if v.unit is defined else v.get('unit','')) if v else '' %}
+        <option value="{{ u }}" {{ 'selected' if cur==u else '' }}>{{ u }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="quantity">Quantity</label>
+    <input id="quantity" name="quantity" class="form-control" type="number" step="any"
+           value="{{ (v.quantity if v.quantity is defined else v.get('quantity','')) if v else '' }}">
+  </div>
+
+  <div class="form-group">
+    <label for="low_stock_threshold">Low Stock Threshold</label>
+    <input id="low_stock_threshold" name="low_stock_threshold" class="form-control" type="number" step="any"
+           value="{{ (v.low_stock_threshold if v.low_stock_threshold is defined else v.get('low_stock_threshold','')) if v else '' }}"
+           {{ 'disabled' if limited else '' }}>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">{{ 'Save' if mode=='edit' else 'Create' }}</button>
+    <a class="btn btn-secondary" href="{{ url_for('inventory_list') }}">Cancel</a>
+  </div>
+</form>
+
+{# Delete button only when editing AND not limited (i.e., Manager/Cook) #}
+{% if mode == 'edit' and item_id and not limited %}
+<form action="{{ url_for('inventory_delete', iid=item_id) }}" method="post"
+      onsubmit="return confirm('Are you sure you want to delete this item?');"
+      style="margin-top:12px;">
+  <button class="btn btn-danger" type="submit">Delete</button>
+</form>
+{% endif %}
+
+<p style="margin-top:14px;">
+  ← <a href="{{ url_for('inventory_list') }}">Back to Inventory</a> |
+  <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</p>
+
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Resident Card{% endblock %}
+{% block content %}
+
+<style>
+  .toolbar{ display:flex; gap:12px; margin-bottom:16px; }
+  /* Hide the toolbar entirely when we’re in auto mode */
+  {% if auto_print %}.toolbar{ display:none; }{% endif %}
+
+  /* Print styles: only the card prints, with nice spacing */
+  @media print{
+    body{ background:#fff !important; }
+    .toolbar{ display:none !important; }
+    header, nav, footer{ display:none !important; }
+    .print-card{
+      margin:0 !important; padding:0 !important; border:none !important; box-shadow:none !important;
+    }
+  }
+
+  .print-card{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; box-shadow: 0 4px 16px rgba(0,0,0,.06);
+  }
+  .row{ display:grid; grid-template-columns: 220px 1fr; gap:10px 18px; align-items:flex-start; }
+  .label{ font-weight:700; }
+</style>
+
+{% set full_name = (r.first_name ~ ' ' ~ r.last_name).strip() %}
+
+<div class="toolbar">
+  <a class="btn" href="{{ url_for('residents_list') }}">← Back to Residents</a>
+  <button class="btn btn-primary" onclick="window.print()">Print</button>
+</div>
+
+<div class="print-card">
+  <h1 style="margin:0 0 12px;">{{ full_name }}</h1>
+  <hr style="border:none; border-top:1px solid var(--line); margin:12px 0 16px;">
+  <div class="row">
+    <div class="label">Age</div>        <div>{{ age(r.birthday) }}</div>
+    <div class="label">Birthday</div>   <div>{{ r.birthday.strftime('%Y-%m-%d') if r.birthday else '' }}</div>
+    <div class="label">Medications / Vitamins</div> <div>{{ r.medications or '—' }}</div>
+    <div class="label">Illnesses</div>  <div>{{ r.illnesses or '—' }}</div>
+    <div class="label">Allergies (Food Only)</div> <div>{{ r.allergies or '—' }}</div>
+    <div class="label">Fluids</div>     <div>{{ r.fluids or '—' }}</div>
+    <div class="label">Diet</div>       <div>{{ r.diet or '—' }}</div>
+    <div class="label">Notes</div>      <div>{{ r.notes or '—' }}</div>
+  </div>
+</div>
+
+{% if auto_print %}
+<script>
+  // Auto print as soon as the page is ready, then attempt to close the tab
+  window.addEventListener('load', function(){
+    // Give the browser a tick to layout before printing
+    setTimeout(function(){
+      window.print();
+    }, 50);
+  });
+
+  // Try to close after printing (works when opened via user gesture, e.g., from link with target=_blank)
+  // If the browser blocks close(), nothing breaks; user can close the tab manually.
+  window.onafterprint = function(){
+    setTimeout(function(){ window.close(); }, 100);
+  };
+</script>
+{% endif %}
+
+{% endblock %}

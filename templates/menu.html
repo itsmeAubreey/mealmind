@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Menu{% endblock %}
+{% block content %}
+
+<style>
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin: 8px 0 14px; }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); gap: 18px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { margin:0 0 8px; }
+  .muted { color:#6b7280; font-size:13px; }
+  .form-group { margin-bottom: 12px; }
+  .hint { font-size:12px; color:#6b7280; margin-top:4px; }
+  textarea { min-height: 110px; }
+  .actions { display:flex; gap:10px; margin-top: 12px; flex-wrap:wrap; }
+  .btn-primary { background:#2563eb; color:#fff; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; }
+  .btn-secondary { background:#eef2f6; color:#111827; border:1px solid var(--line); padding:10px 14px; border-radius:8px; cursor:pointer; }
+  .btn-danger { background:#ef4444; color:#fff; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; }
+  .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#eef2f6; font-weight:600; }
+  .inline { display:inline-block; }
+  .w-220 { width:220px; }
+</style>
+
+<div class="wrap">
+  <h1>Menu for {{ day.strftime("%Y-%m-%d") if day else "" }}</h1>
+
+  <!-- Date switcher -->
+  <form class="toolbar" method="get" action="{{ url_for('menu_page') }}">
+    <input class="form-control w-220" type="date" name="day" value="{{ day.strftime('%Y-%m-%d') if day else '' }}">
+    <button class="btn-primary" type="submit">Go</button>
+  </form>
+
+  <!-- SAVE MENU -->
+  <form method="post" action="{{ url_for('menu_page') }}">
+    <input type="hidden" name="day" value="{{ day.strftime('%Y-%m-%d') if day else '' }}">
+
+    <div class="cards">
+      <!-- ============ BREAKFAST ============ -->
+      <div class="card">
+        <h2>Breakfast</h2>
+
+        <div class="form-group">
+          <label>Title</label>
+          <input class="form-control" type="text" name="Breakfast_title"
+                 value="{{ (Breakfast.title if Breakfast else '') }}">
+        </div>
+
+        <div class="form-group">
+          <select class="form-control preset-select" data-meal="Breakfast">
+            <option value="">— Choose a preset —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Description (optional)</label>
+          <textarea class="form-control" name="Breakfast_descr">{{ (Breakfast.description if Breakfast else '') }}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Ingredients (one per line)</label>
+          <div class="hint">
+            Format: <b>Name: quantity unit</b>&nbsp;&nbsp; e.g., <i>Ham (baked slices): 6 kg</i>, <i>Hamburger/WW buns: 8 packs</i>
+          </div>
+          <textarea class="form-control" name="Breakfast_ingredients"
+                    placeholder="Eggs (large): 90 pcs&#10;Milk (2%): 12 L&#10;White bread loaves: 10 loaves">{{ Breakfast_lines or '' }}</textarea>
+        </div>
+      </div>
+
+      <!-- ============ LUNCH ============ -->
+      <div class="card">
+        <h2>Lunch</h2>
+
+        <div class="form-group">
+          <label>Title</label>
+          <input class="form-control" type="text" name="Lunch_title"
+                 value="{{ (Lunch.title if Lunch else '') }}">
+        </div>
+
+        <div class="form-group">
+          <select class="form-control preset-select" data-meal="Lunch">
+            <option value="">— Choose a preset —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Description (optional)</label>
+          <textarea class="form-control" name="Lunch_descr">{{ (Lunch.description if Lunch else '') }}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Ingredients (one per line)</label>
+          <div class="hint">
+            Format: <b>Name: quantity unit</b>&nbsp;&nbsp; e.g., <i>Tomato sauce: 12 L</i>, <i>Pasta (spaghetti, uncooked): 16 kg</i>
+          </div>
+          <textarea class="form-control" name="Lunch_ingredients"
+                    placeholder="Pasta (spaghetti, uncooked): 16 kg&#10;Tomato sauce: 12 L&#10;Ground beef: 12 kg">{{ Lunch_lines or '' }}</textarea>
+        </div>
+      </div>
+
+      <!-- ============ DINNER ============ -->
+      <div class="card">
+        <h2>Dinner</h2>
+
+        <div class="form-group">
+          <label>Title</label>
+          <input class="form-control" type="text" name="Dinner_title"
+                 value="{{ (Dinner.title if Dinner else '') }}">
+        </div>
+
+        <div class="form-group">
+          <select class="form-control preset-select" data-meal="Dinner">
+            <option value="">— Choose a preset —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Description (optional)</label>
+          <textarea class="form-control" name="Dinner_descr">{{ (Dinner.description if Dinner else '') }}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Ingredients (one per line)</label>
+          <div class="hint">
+            Format: <b>Name: quantity unit</b>&nbsp;&nbsp; e.g., <i>Beef strips: 18 kg</i>, <i>Rice (uncooked): 16 kg</i>
+          </div>
+          <textarea class="form-control" name="Dinner_ingredients"
+                    placeholder="Beef strips: 18 kg&#10;Rice (uncooked): 16 kg&#10;Broccoli florets: 10 kg">{{ Dinner_lines or '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      {% if can_edit %}
+        <button class="btn-primary" type="submit">Save Menu</button>
+      {% endif %}
+      <a class="btn-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
+    </div>
+  </form>
+
+  <!-- APPLY (DEDUCT INVENTORY) -->
+  {% if can_apply %}
+    <form class="inline" method="post" action="{{ url_for('menu_apply') }}" style="margin-top:10px;">
+      <input type="hidden" name="day" value="{{ day.strftime('%Y-%m-%d') if day else '' }}">
+      <button class="btn-primary" type="submit">Apply Menu (Deduct Inventory)</button>
+    </form>
+  {% endif %}
+
+  <p style="margin-top:14px;">
+    <span class="muted">Tip: Inventory deduction matches by exact <b>Item Name</b> and <b>Unit</b>.</span>
+  </p>
+</div>
+
+<!-- Preset loader: fetch real menus grouped by meal and fill dropdowns -->
+<script>
+  // Find controls inside the card that contains the select
+  function findControlsFromSelect(select) {
+    const card = select.closest('.card') || document;
+    const titleInput = card.querySelector('input[type="text"]');
+    // choose the last textarea in the card (the ingredients box)
+    const textareas = Array.from(card.querySelectorAll('textarea'));
+    const ingTextarea = textareas[textareas.length - 1];
+    return { titleInput, ingTextarea };
+  }
+
+  function populatePresetSelect(select, items) {
+    // clear then add placeholder
+    select.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '— Choose a preset —';
+    select.appendChild(ph);
+
+    (items || []).forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.title;
+      opt.textContent = m.title;
+      opt.dataset.lines = m.lines || '';
+      select.appendChild(opt);
+    });
+
+    // when chosen, fill title + ingredients
+    select.addEventListener('change', () => {
+      const opt = select.selectedOptions[0];
+      if (!opt || !opt.value) return;
+      const { titleInput, ingTextarea } = findControlsFromSelect(select);
+      if (titleInput)  titleInput.value = opt.value;
+      if (ingTextarea) ingTextarea.value = opt.dataset.lines || '';
+    });
+  }
+
+  // Load live presets grouped by meal type from backend
+  fetch("{{ url_for('menu_presets_json') }}")
+    .then(r => r.json())
+    .then(data => {
+      document.querySelectorAll('select.preset-select').forEach(sel => {
+        const meal = sel.dataset.meal;  // Breakfast / Lunch / Dinner
+        const list = (data && data[meal]) ? data[meal] : [];
+        populatePresetSelect(sel, list);
+      });
+    })
+    .catch(err => console.warn('Failed to load presets:', err));
+</script>
+
+{% endblock %}

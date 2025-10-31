@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Menu Scheduler{% endblock %}
+{% block content %}
+
+<style>
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+  .card{padding:16px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .card h2{margin:0 0 8px;font-size:20px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .meal-card .items{margin-top:8px}
+  .meal-card .item{display:grid;grid-template-columns:1fr 120px 110px;gap:8px;align-items:center;margin-bottom:8px}
+  .qty-group{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .qty-group button{width:42px;height:42px;border:none;background:#eef2f6;font-weight:700;cursor:pointer}
+  .qty-group input{width:100%;text-align:center;border:none;height:42px}
+  .muted{color:#6b7280;font-size:13px}
+  .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2f6;font-weight:600}
+</style>
+
+<h1>Menu Scheduler</h1>
+
+<form method="post" action="{{ url_for('menu_scheduler') }}">
+  <div class="card">
+    <div class="row">
+      <label style="font-weight:600">Date</label>
+      <input class="form-control" type="date" name="date" value="{{ date_value }}" style="width:220px">
+      <span class="muted">Pick a date, choose menus per meal, adjust quantities, add notes, then Save.</span>
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label>Notes (optional)</label>
+      <textarea name="notes" class="form-control" rows="2" placeholder="Special instructions, holidays, etc."></textarea>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:12px">
+    {% for meal in ["Breakfast","Lunch","Dinner"] %}
+    <div class="card meal-card" data-meal="{{ meal }}">
+      <h2>{{ meal }}</h2>
+
+      <div class="row">
+        <select class="form-control menu-select" name="{{ meal }}_menu">
+          <option value="">— Choose a saved menu —</option>
+          {% for m in menus_by_meal.get(meal, []) %}
+            <option value="{{ m.id }}">{{ m.title }}</option>
+          {% endfor %}
+        </select>
+        <span class="muted">Items will appear below and can be adjusted.</span>
+      </div>
+
+      <div class="items"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="actions" style="margin-top:12px">
+    <button class="btn btn-primary" type="submit">Save & Deduct Inventory</button>
+    <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
+  </div>
+</form>
+
+{% if existing and existing|length %}
+  <div class="card" style="margin-top:14px">
+    <h2>Existing schedules for {{ date_value }}</h2>
+    <ul style="margin:0;padding-left:18px">
+      {% for s in existing %}
+        <li><span class="pill">{{ s.meal_type }}</span> — {{ s.menu.title if s.menu_id else 'Custom' }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<p style="margin-top:12px">
+  ← <a href="{{ url_for('dashboard') }}">Back to Dashboard</a> |
+  <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
+</p>
+
+
+<script>
+  async function fetchMenu(menuId){
+    const r = await fetch(`{{ url_for('api_menu_items', menu_id=0) }}`.replace('/0/', `/${menuId}/`));
+    if(!r.ok) throw new Error('Failed to load menu items');
+    return r.json();
+  }
+
+  function makeItemRow(meal, ing){
+    // ing: {id, inventory_id, name, quantity, unit}
+    const wrap = document.createElement('div');
+    wrap.className = 'item';
+
+    const name = document.createElement('input');
+    name.className = 'form-control';
+    name.value = `${ing.name}`;
+    name.disabled = true;
+
+    const qtyWrap = document.createElement('div');
+    qtyWrap.className = 'qty-group';
+
+    const dec = document.createElement('button');
+    dec.type = 'button'; dec.textContent = '−';
+    const inc = document.createElement('button');
+    inc.type = 'button'; inc.textContent = '+';
+
+    const qty = document.createElement('input');
+    qty.type = 'number'; qty.step = 'any'; qty.min = '0';
+    qty.name = `${meal}_qty_${ing.id}`;  // MUST match app.py expectation
+    qty.value = ing.quantity;
+
+    dec.addEventListener('click', ()=> { qty.value = Math.max(0, (+qty.value||0)-1); });
+    inc.addEventListener('click', ()=> { qty.value = (+qty.value||0)+1; });
+
+    qtyWrap.appendChild(dec); qtyWrap.appendChild(qty); qtyWrap.appendChild(inc);
+
+    const unit = document.createElement('input');
+    unit.className = 'form-control'; unit.value = ing.unit || '';
+    unit.disabled = true;
+
+    wrap.appendChild(name);
+    wrap.appendChild(qtyWrap);
+    wrap.appendChild(unit);
+    return wrap;
+  }
+
+  document.querySelectorAll('.menu-select').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      const meal = sel.name.replace('_menu',''); // Breakfast/Lunch/Dinner
+      const box  = sel.closest('.meal-card').querySelector('.items');
+      box.innerHTML = '';
+      const id = sel.value;
+      if(!id){ return; }
+      try{
+        const data = await fetchMenu(id);
+        (data.items || []).forEach(ing=>{
+          box.appendChild(makeItemRow(meal, ing));
+        });
+      }catch(e){
+        box.innerHTML = '<div class="muted">Failed to load items.</div>';
+      }
+    });
+  });
+</script>
+
+{% endblock %}

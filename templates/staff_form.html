@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Staff' if mode == 'edit' else 'New Staff' }}{% endblock %}
+{% block content %}
+
+<h1>{{ 'Edit Staff' if mode == 'edit' else 'New Staff' }}</h1>
+
+{% if errors and errors|length %}
+  <div class="alert alert-danger">
+    <ul class="mb-0">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form method="post" class="form-grid">
+  <div class="fg">
+    <label class="form-label">First Name</label>
+    <input class="form-control" type="text" name="first_name"
+           value="{{ values.first_name | default('') }}">
+  </div>
+
+  <div class="fg">
+    <label class="form-label">Last Name</label>
+    <input class="form-control" type="text" name="last_name"
+           value="{{ values.last_name | default('') }}">
+  </div>
+
+  <div class="fg">
+    <label class="form-label">Username</label>
+    <input class="form-control" type="text" name="username"
+           value="{{ values.username | default('') }}">
+  </div>
+
+  <div class="fg">
+    <label class="form-label">Employee ID</label>
+    <input class="form-control" type="text" name="employee_id"
+           value="{{ values.employee_id | default('') }}">
+  </div>
+
+  <div class="fg">
+    <label class="form-label">Email</label>
+    <input class="form-control" type="email" name="email"
+           value="{{ values.email | default('') }}">
+  </div>
+
+  <div class="fg">
+    <label class="form-label">Role</label>
+    {% set current_role = values.role | default('Dietary Aide') %}
+    <select class="form-select" name="role">
+      {% for r in roles %}
+        <option value="{{ r }}" {{ 'selected' if r == current_role else '' }}>
+          {{ r }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {% if mode == 'new' %}
+  <div class="fg fg-wide">
+    <label class="form-label">Temporary Password</label>
+    <input class="form-control" type="text" name="temp_password" value="">
+    <div class="form-text">User will be able to change this on first login.</div>
+  </div>
+  {% endif %}
+
+  <div class="fg fg-actions">
+    <button class="btn btn-primary btn-action" type="submit">
+      {{ 'Save' if mode == 'edit' else 'Create' }}
+    </button>
+    <a class="btn btn-outline-secondary btn-action" href="{{ url_for('staff_list') }}">Cancel</a>
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+  </div>
+</form>
+
+<style>
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 420px));
+    gap: 1rem 1.25rem;
+    max-width: 900px;
+  }
+  .fg { display: flex; flex-direction: column; }
+  .fg-wide { grid-column: 1 / -1; }
+  .fg-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-top: .25rem;
+  }
+  .btn-action { min-width: 120px; }
+</style>
+{% endblock %}

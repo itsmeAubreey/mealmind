@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'New' if mode=='new' else 'Edit' }} Staff{% endblock %}
+{% block content %}
+<h1>{{ 'New' if mode=='new' else 'Edit' }} Staff</h1>
+
+{% if errors %}<div class="auth-alert"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+
+<form method="post" class="form-grid">
+  <label for="employee_id">Employee ID (Username)</label>
+  <input id="employee_id" name="employee_id" value="{{ values.employee_id or '' }}" {% if is_manager %}readonly{% endif %} required>
+
+  <label for="first_name">First Name</label>
+  <input id="first_name" name="first_name" value="{{ values.first_name or '' }}" required>
+
+  <label for="last_name">Last Name</label>
+  <input id="last_name" name="last_name" value="{{ values.last_name or '' }}" required>
+
+  <label for="email">Email</label>
+  <input id="email" type="email" name="email" value="{{ values.email or '' }}">
+
+  <label for="role">Role</label>
+  <select id="role" name="role" {% if is_manager %}disabled{% endif %}>
+    {% for r in roles %}<option value="{{ r }}" {% if values.role==r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+  </select>
+
+  {% if mode=='new' or not is_manager %}
+    <label for="password">Temporary Password</label>
+    <input id="password" type="password" name="password" placeholder="At least 8 chars">
+
+    <label for="confirm">Confirm Password</label>
+    <input id="confirm" type="password" name="confirm">
+  {% endif %}
+</form>
+
+<div style="margin-top:14px;">
+  <button class="btn" onclick="this.closest('body').querySelector('form').submit()">{{ 'Create' if mode=='new' else 'Save' }}</button>
+  <a class="btn secondary" href="{{ url_for('users_list') }}">Cancel</a>
+</div>
+
+{% if mode=='edit' and user_id and not is_manager %}
+<form method="post" action="{{ url_for('users_delete', uid=user_id) }}"
+      onsubmit="return confirm('Are you sure you want to delete this staff member?');"
+      style="margin-top:10px;">
+  <button class="btn danger" type="submit">Delete</button>
+</form>
+{% endif %}
+{% endblock %}

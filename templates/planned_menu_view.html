@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Planned Menu – {{ day_value.strftime("%Y-%m-%d") }}{% endblock %}
+
+{% block content %}
+<style>
+  .day-wrap { max-width: 1280px; margin: 0 auto; padding: 2rem 1rem 2rem; }
+  .day-title { font-size: clamp(1.6rem, 2.2vw, 2.2rem); font-weight: 800; letter-spacing: .3px; margin-bottom: 1.25rem; }
+
+  .meal-grid { display: grid; grid-template-columns: repeat(3, minmax(280px, 1fr)); gap: 18px; }
+  @media (max-width: 1100px) { .meal-grid { grid-template-columns: repeat(2, minmax(260px, 1fr)); } }
+  @media (max-width: 680px)  { .meal-grid { grid-template-columns: 1fr; } }
+
+  .meal-card { background: #fff; border: 1px solid rgba(2,6,23,.06); box-shadow: 0 10px 24px rgba(2,6,23,.06);
+               border-radius: 14px; padding: 18px 18px 14px; display: flex; flex-direction: column; min-height: 260px; }
+
+  .meal-chip { display:inline-block; padding:6px 10px; border-radius:999px; font-size:.8rem; font-weight:700;
+               letter-spacing:.2px; color:#0b1220; background:#eef2ff; border:1px solid #e5e7eb; margin-bottom:8px; }
+  .meal-title { font-weight:700; font-size:1.1rem; margin-bottom:6px; }
+  .meal-notes { color:#4b5563; font-size:.95rem; margin-bottom:10px; }
+
+  .meal-list { list-style:none; padding-left:0; margin:0; }
+  .meal-list li { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:baseline;
+                  padding:6px 0; border-bottom:1px dashed rgba(2,6,23,.08); }
+  .meal-list li:last-child { border-bottom:none; }
+  .meal-list .n { color:#111827; }
+  .meal-list .q { font-variant-numeric: tabular-nums; min-width:54px; text-align:right; color:#0f172a; }
+  .meal-list .u { min-width:48px; text-align:left; color:#6b7280; }
+</style>
+
+<div class="day-wrap">
+  <h2 class="day-title">Planned Menu for {{ day_value.strftime("%Y-%m-%d") }}</h2>
+
+  {% if not blocks %}
+    <div class="alert alert-info">No meals saved for this day.</div>
+  {% else %}
+    <div class="meal-grid">
+      {% for b in blocks %}
+        <div class="meal-card">
+          <div class="meal-chip">{{ b['meal'] }}</div>
+          <div class="meal-title">{{ b['menu_title'] }}</div>
+
+          {% if b['notes'] %}
+            <div class="meal-notes"><strong>Notes:</strong> {{ b['notes'] }}</div>
+          {% endif %}
+
+          {% if b['items'] %}
+            <ul class="meal-list">
+              {% for it in b['items'] %}
+                <li>
+                  <span class="n">{{ it['name'] }}</span>
+                  <span class="q">{{ it['qty']|round(2) }}</span>
+                  <span class="u">{{ it['unit'] }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="text-muted">No items recorded.</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="mt-3">
+    <a href="{{ url_for('planned_menus') }}" class="btn btn-link">← Back to Planned Menus</a>
+  </div>
+</div>
+{% endblock %}

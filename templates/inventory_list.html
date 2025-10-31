@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+
+<h2 class="mb-3">Inventory</h2>
+
+<form method="get" class="mb-3" style="display:flex;gap:8px;flex-wrap:wrap;">
+  <input name="q" value="{{ q or '' }}" placeholder="Search item..." class="form-control" style="max-width:260px;">
+  <select name="show" class="form-select" style="max-width:160px;">
+    <option value="all" {{ 'selected' if show=='all' else '' }}>All</option>
+    <option value="low" {{ 'selected' if show=='low' else '' }}>Low only</option>
+  </select>
+  <button class="btn btn-primary">Filter</button>
+
+  {% if current_user.role in ['Manager','Cook'] %}
+    <a href="{{ url_for('inventory_new') }}" class="btn btn-success">+ New Item</a>
+  {% endif %}
+
+  <a href="{{ url_for('inventory_export', q=q or '', status='all' if show=='all' else show) }}" class="btn btn-outline-secondary">Export CSV</a>
+</form>
+
+<div class="table-responsive">
+<table class="table table-striped align-middle" style="table-layout:fixed;">
+  <thead>
+    <tr>
+      <th style="width:34%;">Item</th>
+      <th style="width:12%;">Unit</th>
+      <th style="width:24%;">Quantity</th>
+      <th style="width:30%;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in items %}
+      {% set it = row.obj %}
+      {% set is_low = row.is_low %}
+      <tr {% if is_low %}class="table-warning"{% endif %}>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ it.name }}</td>
+        <td>{{ it.unit }}</td>
+        <td>
+          <strong>{{ '%.2f'|format(it.quantity or 0) }}</strong>
+          {% if is_low %}
+            <span class="badge bg-danger ms-2">LOW</span>
+          {% endif %}
+        </td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap;">
+          <!-- Fast bump controls (+/−) for ALL allowed roles -->
+          <form method="post" action="{{ url_for('inventory_bump', iid=it.id, q=q or '', show=show) }}">
+            <input type="hidden" name="delta" value="-1">
+            <button class="btn btn-outline-secondary" title="Decrease by 1" {% if current_user.role not in ['Manager','Cook','Dietary Aide'] %}disabled{% endif %}>−</button>
+          </form>
+          <form method="post" action="{{ url_for('inventory_bump', iid=it.id, q=q or '', show=show) }}">
+            <input type="hidden" name="delta" value="1">
+            <button class="btn btn-outline-secondary" title="Increase by 1" {% if current_user.role not in ['Manager','Cook','Dietary Aide'] %}disabled{% endif %}>+</button>
+          </form>
+
+          {% if current_user.role in ['Manager','Cook'] %}
+            <a href="{{ url_for('inventory_edit', iid=it.id) }}" class="btn btn-primary">Edit</a>
+            {# NOTE: Delete button intentionally removed from list view #}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<p class="mt-3"><a href="{{ url_for('dashboard') }}">← Back to Dashboard</a></p>
+{% endblock %}

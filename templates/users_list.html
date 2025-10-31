@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Staff{% endblock %}
+
+{% block content %}
+<section class="page">
+  <h1>Staff</h1>
+
+  <form method="get" class="form-inline" style="margin-bottom:1rem;">
+    <label for="role" style="margin-right:.5rem;">Filter by role</label>
+    <select id="role" name="role" class="form-control">
+      {% for r in roles %}
+        <option value="{{ r }}" {% if role_filter==r %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary" type="submit" style="margin-left:.5rem;">Apply</button>
+    <a class="btn btn-secondary" href="{{ url_for('users_list') }}" style="margin-left:.5rem;">Clear</a>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-striped table-hover">
+      <thead class="thead-light">
+        <tr>
+          <th>Employee ID / Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Must change pw?</th>
+          <th style="width:100px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email or '' }}</td>
+            <td>{{ u.role }}</td>
+            <td>{{ 'Yes' if u.must_change_password else 'No' }}</td>
+            <td><a href="{{ url_for('users_edit', uid=u.id) }}">Edit</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <a class="btn btn-primary" href="{{ url_for('users_new') }}">+ New Staff</a>
+  <div style="margin-top:1rem;">
+    <a href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+  </div>
+</section>
+{% endblock %}

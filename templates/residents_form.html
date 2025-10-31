@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Resident' if mode=='edit' else 'New Resident' }}{% endblock %}
+{% block content %}
+
+<style>
+  /* Page-scoped form styling (keeps your global theme untouched) */
+  .resident-form { max-width: 520px; }
+  .resident-form .form-group { margin-bottom: 12px; }
+  .resident-form label { display:block; font-weight:600; margin-bottom:6px; }
+  .resident-form .form-control {
+    width: 100%;
+    box-sizing: border-box;
+    height: 42px;            /* make inputs/selects same height */
+    padding: 8px 10px;
+  }
+  .resident-form textarea.form-control {
+    min-height: 100px;       /* textareas taller but same width */
+    height: auto;
+    line-height: 1.35;
+  }
+  .resident-form .actions { display:flex; gap:12px; margin-top: 12px; }
+</style>
+
+<h1 class="mb-3">{{ 'Edit Resident' if mode=='edit' else 'New Resident' }}</h1>
+
+{% if errors and errors|length %}
+  <div class="alert alert-danger">
+    <ul class="mb-0">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{# Resolve values, defaulting None -> '' to avoid showing "None" in fields #}
+{% set v = values or {} %}
+{% set first_name  = (v.get('first_name')  if v is mapping else (v.first_name  if v else '')) or '' %}
+{% set last_name   = (v.get('last_name')   if v is mapping else (v.last_name   if v else '')) or '' %}
+{% set birthday    = (v.get('birthday')    if v is mapping else (v.birthday    if v else '')) or '' %}
+{% set medications = (v.get('medications') if v is mapping else (v.medications if v else '')) or '' %}
+{% set illnesses   = (v.get('illnesses')   if v is mapping else (v.illnesses   if v else '')) or '' %}
+{% set allergies   = (v.get('allergies')   if v is mapping else (v.allergies   if v else '')) or '' %}
+{% set fluids_val  = (v.get('fluids')      if v is mapping else (v.fluids      if v else '')) or '' %}
+{% set diet_val    = (v.get('diet')        if v is mapping else (v.diet        if v else '')) or '' %}
+{% set notes       = (v.get('notes')       if v is mapping else (v.notes       if v else '')) or '' %}
+
+<form method="post" novalidate class="resident-form">
+  <div class="form-group">
+    <label for="first_name">First Name *</label>
+    <input id="first_name" name="first_name" type="text" class="form-control" required value="{{ first_name }}">
+  </div>
+
+  <div class="form-group">
+    <label for="last_name">Last Name *</label>
+    <input id="last_name" name="last_name" type="text" class="form-control" required value="{{ last_name }}">
+  </div>
+
+  <div class="form-group">
+    <label for="birthday">Birthday *</label>
+    <input id="birthday" name="birthday" type="date" class="form-control"
+           value="{{ birthday }}">
+    <small class="form-text text-muted">Age is auto-calculated from birthday.</small>
+  </div>
+
+  <div class="form-group">
+    <label for="medications">Medications / Vitamins</label>
+    <textarea id="medications" name="medications" class="form-control" rows="2">{{ medications }}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="illnesses">Illnesses</label>
+    <textarea id="illnesses" name="illnesses" class="form-control" rows="2">{{ illnesses }}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="allergies">Allergies (Food Only)</label>
+    <textarea id="allergies" name="allergies" class="form-control" rows="2">{{ allergies }}</textarea>
+  </div>
+
+  <!-- Fluids dropdown -->
+  <div class="form-group">
+    <label for="fluids">Fluids</label>
+    {% set fluids_options = ['Thin', 'Nectar', 'Honey', 'Thickened'] %}
+    <select id="fluids" name="fluids" class="form-control">
+      {% for opt in fluids_options %}
+        <option value="{{ opt }}" {{ 'selected' if fluids_val==opt else '' }}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- Diet dropdown -->
+  <div class="form-group">
+    <label for="diet">Diet</label>
+    {% set diet_options = ['Regular', 'Dysphagia Soft', 'Minced', 'Puree', 'Liquid Puree'] %}
+    <select id="diet" name="diet" class="form-control">
+      {% for opt in diet_options %}
+        <option value="{{ opt }}" {{ 'selected' if diet_val==opt else '' }}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="notes">Notes</label>
+    <textarea id="notes" name="notes" class="form-control" rows="3">{{ notes }}</textarea>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">{{ 'Save' if mode=='edit' else 'Create' }}</button>
+    <a class="btn btn-secondary" href="{{ url_for('residents_list') }}">Cancel</a>
+  </div>
+</form>
+
+{% if mode == 'edit' and rid %}
+<form action="{{ url_for('residents_delete', rid=rid) }}" method="post"
+      onsubmit="return confirm('Delete this resident?');" style="margin-top:12px;">
+  <button class="btn btn-danger" type="submit">Delete</button>
+</form>
+{% endif %}
+
+<p style="margin-top:14px;">
+  ← <a href="{{ url_for('residents_list') }}">Back to Residents</a> |
+  <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</p>
+
+{% endblock %}

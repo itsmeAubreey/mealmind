@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Staff{% endblock %}
+{% block content %}
+
+<h1>Staff</h1>
+
+<form method="get" class="mb-4 d-flex align-items-center flex-wrap" style="gap:.75rem;">
+  <input
+    class="form-control"
+    style="max-width:380px"
+    type="text"
+    name="q"
+    placeholder="Search by first, last, username, email, or ID"
+    value="{{ q or '' }}"
+  >
+
+  <label class="ms-2 me-1 mb-0">Filter by role</label>
+  <select class="form-select" name="role" style="max-width:180px;">
+    <option value="all" {{ 'selected' if (role_filter=='all') else '' }}>All roles</option>
+    {% for r in roles %}
+      <option value="{{ r }}" {{ 'selected' if (role_filter==r) else '' }}>{{ r }}</option>
+    {% endfor %}
+  </select>
+
+  <button class="btn btn-primary ms-2" type="submit">Filter</button>
+  <a class="btn btn-secondary" href="{{ url_for('staff_list') }}">Clear</a>
+</form>
+
+<table class="table table-striped align-middle">
+  <thead class="table-light">
+    <tr>
+      <th>First Name</th>
+      <th>Last Name</th>
+      <th>Employee ID</th>
+      <th>Email</th>
+      <th>Role</th>
+      <th style="width:210px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% if users and users|length %}
+    {% for u in users %}
+      <tr>
+        <td>{{ u.first_name or '—' }}</td>
+        <td>{{ u.last_name or '—' }}</td>
+        <td>{{ u.employee_id or '—' }}</td>
+        <td>{{ u.email or '—' }}</td>
+        <td>{{ u.role or '—' }}</td>
+        <td>
+          <div class="btn-pair">
+            <a class="btn btn-primary btn-action" href="{{ url_for('staff_edit', uid=u.id) }}">Edit</a>
+            <form method="post"
+                  action="{{ url_for('staff_delete', uid=u.id) }}"
+                  onsubmit="return confirm('Delete this staff member?');">
+              <button class="btn btn-danger btn-action" type="submit">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+  {% else %}
+    <tr><td colspan="6" class="text-muted">No staff yet.</td></tr>
+  {% endif %}
+  </tbody>
+</table>
+
+<div class="d-flex flex-wrap" style="gap:.75rem;">
+  <a class="btn btn-primary" href="{{ url_for('staff_new') }}">+ New Staff</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+</div>
+
+<style>
+  .btn-pair {
+    display: inline-flex;
+    gap: .5rem;
+  }
+  .btn-action {
+    min-width: 96px;   /* same width for Edit/Delete */
+  }
+</style>
+{% endblock %}
