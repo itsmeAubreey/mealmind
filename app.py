@@ -1,8 +1,13 @@
-# app.py — Full app with Menu Builder, Scheduler, Legacy daily page (/menu/legacy),
-# Inventory, Residents, Staff, Dashboard, and strong pre-checks before deductions.
-# Weekly grid FIX: days objects now include {"dow", "date"} to match planned_menu_week.html.
+# app.py — MealMind / Flask app (Azure-ready)
+# Notes:
+# - Uses SQLALCHEMY_DATABASE_URI if present (Azure default), else DATABASE_URL, else local sqlite.
+# - Exposes a top-level `app` so Gunicorn (`gunicorn app:app`) works on Azure.
+# - Performs a safe `db.create_all()` at import time so first deploys work without running migrations.
+# - Seeds a default Manager (manager / 1234) only if no users exist yet.
 
-import os, io, csv
+import os
+import io
+import csv
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
@@ -12,16 +17,15 @@ from flask import (
     session, send_file, flash, jsonify
 )
 from flask_migrate import Migrate
-from sqlalchemy import or_, func   # func used by CSV export filters
+from sqlalchemy import or_, func
 
 # models.py must be in the same folder
 from models import (
     db, User, Resident, InventoryItem,
-    # New menu system models
     Menu, MenuIngredient, MenuSchedule, MenuScheduleItem
 )
 
-# Optional .env
+# Optional .env (local dev convenience)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -62,10 +66,7 @@ def model_has_column(model, name):
 def register_age_helper(app):
     app.jinja_env.globals["age"] = _calc_age
 
-# ---- Role-based dashboard tiles (which big cards to show) ----
 def dashboard_tiles_for(role: str):
-    # Each tile: (label, href, color_key)
-    # color_key is optional if you style by CSS classes in your template.
     manager = [
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
@@ -76,20 +77,16 @@ def dashboard_tiles_for(role: str):
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
         ("Menu", url_for("menu_hub"), "blue"),
-        # no Staff
     ]
     cook = [
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
         ("Menu", url_for("menu_hub"), "blue"),
-        # no Staff
     ]
     aide = [
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
-        # Menu → planned only; we’ll hide builder/scheduler inside menu hub template
         ("Menu", url_for("planned_menus"), "blue"),
-        # no Staff
     ]
     mapping = {
         "Manager": manager,
@@ -100,18 +97,29 @@ def dashboard_tiles_for(role: str):
     return mapping.get(role or "", aide)
 
 
-
 # -------------------------- factory --------------------------
 def create_app():
     app = Flask(__name__)
 
-    sqlite_uri = "sqlite:///" + os.path.join(os.getcwd(), "instance", "app.db")
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", sqlite_uri)
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    # ---- Configuration (Azure/env-first, with solid defaults) -------------
+    # Azure sets SQLALCHEMY_DATABASE_URI. We also accept DATABASE_URL for portability.
+    instance_dir = os.path.join(os.getcwd(), "instance")
+    os.makedirs(instance_dir, exist_ok=True)
+    local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
+
+    db_uri = (
+        os.getenv("SQLALCHEMY_DATABASE_URI")
+        or os.getenv("DATABASE_URL")
+        or local_sqlite
+    )
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = (
+        os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
+    )
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
-    os.makedirs(os.path.join(os.getcwd(), "instance"), exist_ok=True)
 
     db.init_app(app)
     Migrate(app, db)
@@ -123,7 +131,6 @@ def create_app():
     ]
     ROLES = ["Manager", "Cook", "Dietitian", "Dietary Aide"]
 
-    # Make `current_user` available in all templates
     @app.context_processor
     def inject_current_user():
         return {"current_user": session.get("user")}
@@ -224,7 +231,6 @@ def create_app():
         role = session.get("user", {}).get("role")
         tiles = dashboard_tiles_for(role)
         return render_template("dashboard.html", tiles=tiles)
-
 
     # ======================================================================
     # Residents
@@ -582,17 +588,10 @@ def create_app():
     @app.route("/inventory/export.csv")
     @login_required
     def inventory_export():
-        """
-        Export Inventory as CSV, honoring current filters.
-        Supported query params:
-        - q: search term
-        - status: 'low' | 'ok' | 'all'  (default 'all')
-        """
         q = (request.args.get("q") or "").strip()
         status = (request.args.get("status") or "all").lower()
 
         qry = InventoryItem.query
-
         if q:
             qry = qry.filter(InventoryItem.name.ilike(f"%{q}%"))
 
@@ -610,7 +609,6 @@ def create_app():
         out = io.StringIO()
         w = csv.writer(out)
         w.writerow(["Item", "Unit", "Quantity", "Low Stock Threshold", "Status"])
-
         for it in items:
             qty = float(it.quantity or 0)
             thr = float(it.low_stock_threshold or 0)
@@ -621,30 +619,26 @@ def create_app():
         mem.seek(0)
         filename = f"inventory_{status or 'all'}.csv"
         return send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
-    
+
     @app.route("/inventory/<int:iid>/bump", methods=["POST"])
     @login_required
     @roles_required("Manager", "Cook", "Dietary Aide")
     def inventory_bump(iid):
         item = InventoryItem.query.get_or_404(iid)
-        # Aide can only adjust quantity; Managers/Cooks also have full edit elsewhere
         try:
             delta = float(request.form.get("delta", "0"))
         except Exception:
             delta = 0.0
         item.quantity = (item.quantity or 0.0) + delta
         db.session.commit()
-        # stay on same listing with prior filters if present
         return redirect(url_for("inventory_list", q=request.args.get("q", ""), show=request.args.get("show", "all")))
 
-
     # ======================================================================
-    # Legacy One-Day Menu page  → now served at /menu/legacy
+    # Legacy One-Day Menu  → /menu/legacy
     # ======================================================================
     @app.route("/menu/legacy", methods=["GET", "POST"])
     @login_required
     def menu_legacy():
-        """Shows (and lets Manager save) a one-day menu. Cook/Manager can apply to deduct inventory."""
         try:
             from models import MenuEntry, MenuIngredient as LegacyMenuIngredient
         except Exception:
@@ -711,15 +705,14 @@ def create_app():
                         entry.ingredients.clear()
 
                 for ing in _parse_menu_ingredients(lines):
-                    qty = 0.0
                     try:
-                        qty = float(ing.get("quantity", 0) or 0)
+                        qty_val = float(ing.get("quantity", 0) or 0)
                     except Exception:
-                        qty = 0.0
+                        qty_val = 0.0
                     entry.ingredients.append(
                         LegacyMenuIngredient(
                             name=ing.get("name", "").strip(),
-                            quantity=qty,
+                            quantity=qty_val,
                             unit=(ing.get("unit", "") or "").strip()
                         )
                     )
@@ -756,7 +749,6 @@ def create_app():
     def menu_hub():
         return render_template("menu_hub.html")
 
-    # ---- Builder ----------------------------------------------------------
     @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
     @roles_required("Manager", "Dietitian")
@@ -883,7 +875,6 @@ def create_app():
     @app.route("/api/menu/<int:menu_id>/items")
     @login_required
     def api_menu_items(menu_id):
-        """Return a menu's items for dynamic fill in the scheduler."""
         m = Menu.query.get_or_404(menu_id)
         items = []
         for ing in m.ingredients:
@@ -897,7 +888,6 @@ def create_app():
             })
         return jsonify({"menu_id": m.id, "meal_type": m.meal_type, "title": m.title, "items": items})
 
-    # ---- Scheduler --------------------------------------------------------
     @app.route("/menu/scheduler", methods=["GET", "POST"])
     @login_required
     @roles_required("Manager", "Cook", "Dietitian")
@@ -909,7 +899,6 @@ def create_app():
             selected_date = _parse_date(request.form.get("date")) or date.today()
             notes = (request.form.get("notes") or "").strip()
 
-            # Collect chosen menus and per-ingredient overrides
             chosen = {}
             for meal_type in ["Breakfast", "Lunch", "Dinner"]:
                 mid = request.form.get(f"{meal_type}_menu")
@@ -920,9 +909,7 @@ def create_app():
                 flash("No menus selected; nothing saved.", "error")
                 return redirect(url_for("menu_scheduler"))
 
-            # 1) Pre-check: aggregate by inventory_id across all meals
-            need_map = {}
-            name_map = {}
+            need_map, name_map = {}, {}
             for meal_type, mid in chosen.items():
                 base_menu = Menu.query.get(mid)
                 for ing in base_menu.ingredients:
@@ -947,7 +934,6 @@ def create_app():
                 flash("Not saved. Issues: " + "; ".join(insuff), "error")
                 return redirect(url_for("menu_scheduler"))
 
-            # 2) Replace any existing schedule (same date + meal)
             deductions = []
             for meal_type, mid in chosen.items():
                 MenuSchedule.query.filter_by(date=selected_date, meal_type=meal_type).delete(synchronize_session=False)
@@ -973,7 +959,6 @@ def create_app():
             flash("Deducted: " + ", ".join(deductions[:8]) + (" ..." if len(deductions) > 8 else ""), "success")
             return redirect(url_for("menu_scheduler"))
 
-        # GET
         day_str = request.args.get("date")
         selected_date = _parse_date(day_str) or date.today()
         existing = MenuSchedule.query.filter_by(date=selected_date).order_by(MenuSchedule.meal_type).all()
@@ -991,11 +976,9 @@ def create_app():
             suppress_global_flash=True
         )
 
-    # ----- Planned Menus (weekly viewer) --------------------------------------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
-        # offset handling
         try:
             offset = int(request.args.get("offset", 0))
         except Exception:
@@ -1006,22 +989,19 @@ def create_app():
         week_start = current_monday + timedelta(weeks=offset)
         week_end = week_start + timedelta(days=6)
 
-        # FIX: days need {'dow','date'} (template expects d.dow and d.date)
         dows = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         days = [{"dow": dows[i], "date": (week_start + timedelta(days=i))} for i in range(7)]
 
         schedules = (
             MenuSchedule.query
-            .filter(MenuSchedule.date >= week_start,
-                    MenuSchedule.date <= week_end)
+            .filter(MenuSchedule.date >= week_start, MenuSchedule.date <= week_end)
             .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
             .all()
         )
 
-        # grouped: { date: { meal_type: [ {id, menu_title} ] } }
         grouped = defaultdict(lambda: defaultdict(list))
-        # preload titles to minimize queries
         menu_title_cache = {}
+
         def menu_title(mid):
             if mid in menu_title_cache:
                 return menu_title_cache[mid]
@@ -1031,10 +1011,7 @@ def create_app():
             return title
 
         for s in schedules:
-            grouped[s.date][s.meal_type].append({
-                "id": s.id,
-                "menu_title": menu_title(s.menu_id)
-            })
+            grouped[s.date][s.meal_type].append({"id": s.id, "menu_title": menu_title(s.menu_id)})
 
         prev_url = url_for("planned_menus", offset=offset-1)
         next_url = url_for("planned_menus", offset=offset+1)
@@ -1069,9 +1046,9 @@ def create_app():
             return redirect(url_for("planned_menus"))
 
         schedules = (MenuSchedule.query
-                    .filter_by(date=d)
-                    .order_by(MenuSchedule.meal_type.asc())
-                    .all())
+                     .filter_by(date=d)
+                     .order_by(MenuSchedule.meal_type.asc())
+                     .all())
 
         order = {"Breakfast": 0, "Lunch": 1, "Dinner": 2}
         schedules = sorted(schedules, key=lambda s: order.get(s.meal_type, 99))
@@ -1106,7 +1083,6 @@ def create_app():
 
         return render_template("planned_menu_view.html", day_value=d, blocks=detail)
 
-    # ---- Daily browser for legacy per-day saved menus ---------------------
     @app.route("/menu/daily")
     @login_required
     def menu_daily():
@@ -1124,8 +1100,8 @@ def create_app():
         days = {}
         for e in rows:
             days.setdefault(e.day, []).append(e)
-        for d in days:
-            days[d].sort(key=lambda x: {"Breakfast":0,"Lunch":1,"Dinner":2}.get(x.meal_type, 99))
+        for d_ in days:
+            days[d_].sort(key=lambda x: {"Breakfast":0,"Lunch":1,"Dinner":2}.get(x.meal_type, 99))
 
         return render_template("menu_daily.html", days=days, start=start, end=end)
 
@@ -1155,27 +1131,31 @@ def create_app():
         flash(f"Deleted daily menu for {d}.", "success")
         return redirect(url_for("menu_daily"))
 
-    # ---------------- end of routes ----------------
     return app
+
+
+# -------------------------- module-level app (Azure/Gunicorn) --------------------------
+app = create_app()
+with app.app_context():
+    # Create tables on first run; keep migrations enabled for later
+    db.create_all()
+    # Optional seed: create a default Manager if users table is empty
+    if not User.query.first():
+        mgr = User(
+            first_name="",
+            last_name="",
+            username="manager",
+            employee_id="00000000",
+            email="manager@example.com",
+            role="Manager",
+            must_change_password=False,
+        )
+        mgr.set_password("1234")
+        db.session.add(mgr)
+        db.session.commit()
+        print("Seeded manager (manager / 1234)")
 
 
 # -------------------------- dev entrypoint --------------------------
 if __name__ == "__main__":
-    app = create_app()
-    with app.app_context():
-        db.create_all()
-        if not User.query.filter_by(username="manager").first():
-            mgr = User(
-                first_name="",
-                last_name="",
-                username="manager",
-                employee_id="00000000",
-                email="manager@example.com",
-                role="Manager",
-                must_change_password=False,
-            )
-            mgr.set_password("1234")
-            db.session.add(mgr)
-            db.session.commit()
-            print("Seeded manager (manager / 1234)")
-    app.run(debug=True)
+    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1")
