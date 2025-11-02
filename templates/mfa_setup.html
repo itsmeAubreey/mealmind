@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Enable MFA{% endblock %}
+{% block content %}
+<h1>Enable MFA (TOTP)</h1>
+<ol>
+  <li>Open Google Authenticator (or any TOTP app).</li>
+  <li>Add a new account using this <strong>secret</strong>:
+    <code>{{ secret }}</code></li>
+  <li>Or use this URL in your app:
+    <small style="word-break:break-all">{{ otp_uri }}</small></li>
+  <li>Enter the 6-digit code to confirm and enable.</li>
+</ol>
+<form method="post">
+  <label for="code">6-digit code</label>
+  <input id="code" name="code" inputmode="numeric" pattern="\d{6}" required>
+  <button class="btn" type="submit">Enable MFA</button>
+</form>
+{% endblock %}
