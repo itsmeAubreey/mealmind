@@ -17,6 +17,7 @@ import csv
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
+from openai import AzureOpenAI
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -43,6 +44,31 @@ try:
     load_dotenv()
 except Exception:
     pass
+
+try:
+    from flask_wtf.csrf import csrf_exempt
+except Exception:
+    def csrf_exempt(f):  # no-op fallback if CSRF isn't enabled
+        return f
+# --- Azure OpenAI client (ADD HERE) ---
+
+app = Flask(__name__)
+app.config[...] = ...
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
+login_manager = LoginManager(app)  # if you have it
+csrf = CSRFProtect(app)            # if you have it
+
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")          # e.g., https://mealmind-aoai.openai.azure.com/
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")    # e.g., 2024-10-21
+AZURE_OPENAI_MODEL = os.getenv("AZURE_OPENAI_MODEL")                # e.g., gpt-4o-mini
+
+aoai_client = AzureOpenAI(
+    api_key=AZURE_OPENAI_API_KEY,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_version=AZURE_OPENAI_API_VERSION,
+)
 
 
 # -------------------------- helpers --------------------------
@@ -1145,7 +1171,48 @@ def create_app():
     # ======================================================================
     # Azure OpenAI Kitchen Assistant
     # ======================================================================
+    @app.route("/assistant", methods=["GET"])
+def assistant():
+    """Renders the Kitchen Assistant chat page."""
+    return render_template("assistant.html")
 
+
+@app.route("/api/chat", methods=["POST"])
+@csrf_exempt  # keep if you have CSRF enabled; otherwise you may omit
+def api_chat():
+    """
+    Chat endpoint for the Kitchen Assistant.
+    Expects JSON: {"message": "text"} and returns {"reply": "..."}.
+    """
+    data = request.get_json(silent=True) or {}
+    user_text = (data.get("message") or "").strip()
+    if not user_text:
+        return jsonify({"error": "Missing message"}), 400
+
+    system_prompt = (
+        "You are MealMind's Kitchen Assistant for a nursing-home kitchen. "
+        "Give concise, safe suggestions for menus, substitutions, and prep. "
+        "Prefer ingredients that are in stock. When stock is low, propose simple swaps. "
+        "Do not make changes—only suggest. The manager will decide."
+    )
+
+    try:
+        resp = aoai_client.chat.completions.create(
+            model=AZURE_OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.4,
+            max_tokens=600,
+        )
+        reply = resp.choices[0].message.content.strip()
+        return jsonify({"reply": reply})
+    except Exception as e:
+        return jsonify({"error": f"Azure OpenAI error: {e}"}), 500
+
+
+   # ----------------------------------------------------
     def _get_aoai_client():
         """
         Create (and cache) the Azure OpenAI client using env vars.
