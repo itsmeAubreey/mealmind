@@ -61,16 +61,21 @@
     }
 
     async function callAssistant(userText){
-      const res = await fetch('/api/ai/chat', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ message: userText, history })
-      });
-      const data = await res.json();
-      addRow('assistant', data.reply || ('Error: ' + (data.error || 'Unknown error')));
-      if (data.reply){
-        history.push({role:'user', content:userText});
-        history.push({role:'assistant', content:data.reply});
+      try{
+        const res = await fetch('/api/ai/chat', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ message: userText, history })
+        });
+        const data = await res.json();
+        const reply = data && data.reply ? data.reply : ('Error: ' + (data.error || 'Unknown error'));
+        addRow('assistant', reply);
+        if (data && data.reply){
+          history.push({role:'user', content:userText});
+          history.push({role:'assistant', content:data.reply});
+        }
+      }catch(e){
+        addRow('assistant', 'Request failed: ' + e.message);
       }
     }
 
