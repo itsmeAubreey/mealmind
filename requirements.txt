@@ -22,3 +22,5 @@ gunicorn>=21.2,<22.0
 
 # ---- Optional data tools (remove if not used)
 # pandas>=2.0,<3.0
+
+openai>=1.44.0
