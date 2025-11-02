@@ -25,6 +25,9 @@ import csv
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+import pyotp, base64
+
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -69,6 +72,74 @@ def _parse_date(s):
         except ValueError:
             continue
     return None
+
+# ----- Password reset signer -----
+def _reset_signer(secret_key: str):
+    # salt prevents collisions with any other signers in your app
+    return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
+
+def make_reset_token(secret_key: str, user_id: int, email: str) -> str:
+    return _reset_signer(secret_key).dumps({"uid": user_id, "email": email})
+
+def load_reset_token(secret_key: str, token: str, max_age_sec: int = 1800):
+    # 30 minutes default expiry
+    return _reset_signer(secret_key).loads(token, max_age=max_age_sec)
+
+# ----- Email sender (prints to logs if SMTP not configured) -----
+def send_email(to_addr: str, subject: str, body: str):
+    """
+    If you DON'T have SMTP env vars set, this will just print to console/logs.
+    To enable SMTP later, set:
+      SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_USE_TLS=1
+    """
+    import os, smtplib
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT") or 0)
+    user = os.getenv("SMTP_USERNAME")
+    pwd  = os.getenv("SMTP_PASSWORD")
+    use_tls = os.getenv("SMTP_USE_TLS") == "1"
+
+    if not host or not port:
+        print("\n=== Simulated email ===")
+        print(f"TO: {to_addr}\nSUBJECT: {subject}\n\n{body}")
+        print("=======================\n")
+        return
+
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = user
+    msg["To"] = to_addr
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    with smtplib.SMTP(host, port) as s:
+        if use_tls:
+            s.starttls()
+        if user and pwd:
+            s.login(user, pwd)
+        s.send_message(msg)
+
+# ----- MFA helpers (TOTP) -----
+def ensure_mfa_fields(user):
+    # Works even if columns were newly added; avoids AttributeError crashes
+    if not hasattr(user, "mfa_enabled"):
+        user.mfa_enabled = False
+    if not hasattr(user, "mfa_secret") or not user.mfa_secret:
+        user.mfa_secret = None
+
+def make_new_mfa_secret() -> str:
+    # 32-char base32 secret (compatible with Google Authenticator)
+    return pyotp.random_base32()
+
+def totp_from_secret(secret: str):
+    return pyotp.TOTP(secret)
+
+def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
+    return totp_from_secret(secret).provisioning_uri(name=username, issuer_name=issuer)
+
+ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0;
+ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(64);
+
 
 def _calc_age(bday):
     if not bday:
@@ -244,6 +315,111 @@ def create_app():
                 flash("Password updated.", "success")
                 return redirect(url_for("dashboard"))
         return render_template("change_password.html", error=error)
+
+    #==========================================================
+        @app.route("/forgot", methods=["GET", "POST"])
+    def forgot_password():
+        if request.method == "POST":
+            email = (request.form.get("email") or "").strip().lower()
+            user = User.query.filter_by(email=email).first()
+            if user:
+                token = make_reset_token(app.config["SECRET_KEY"], user.id, user.email)
+                reset_url = url_for("reset_password", token=token, _external=True)
+                body = (
+                    "You requested a MealMind password reset.\n\n"
+                    f"Click this link within 30 minutes:\n{reset_url}\n\n"
+                    "If you did not request this, you can ignore this email."
+                )
+                send_email(user.email, "MealMind password reset", body)
+            flash("If that email exists, we've sent a reset link.", "info")
+            return redirect(url_for("login"))
+        return render_template("forgot.html")
+
+    @app.route("/reset/<token>", methods=["GET", "POST"])
+    def reset_password(token):
+        try:
+            data = load_reset_token(app.config["SECRET_KEY"], token, max_age_sec=1800)
+        except SignatureExpired:
+            flash("Reset link expired. Please try again.", "error")
+            return redirect(url_for("forgot_password"))
+        except BadSignature:
+            flash("Invalid reset link.", "error")
+            return redirect(url_for("forgot_password"))
+
+        user = User.query.get(data.get("uid"))
+        if not user or user.email.lower() != data.get("email", "").lower():
+            flash("Invalid reset link.", "error")
+            return redirect(url_for("forgot_password"))
+
+        if request.method == "POST":
+            p1 = request.form.get("password") or ""
+            p2 = request.form.get("confirm") or ""
+            if len(p1) < 8:
+                flash("Password must be at least 8 characters.", "error")
+            elif p1 != p2:
+                flash("Passwords do not match.", "error")
+            else:
+                user.set_password(p1)  # assumes your User has set_password()
+                db.session.commit()
+                flash("Password updated. You can sign in now.", "success")
+                return redirect(url_for("login"))
+        return render_template("reset.html")
+
+        @app.route("/mfa/setup", methods=["GET", "POST"])
+    @login_required
+    def mfa_setup():
+        user = current_user
+        ensure_mfa_fields(user)
+        if not user.mfa_secret:
+            user.mfa_secret = make_new_mfa_secret()
+            db.session.commit()
+
+        # Show QR (as a data URL) or just the secret
+        otp_uri = provisioning_uri(user.mfa_secret, username=user.username, issuer="MealMind")
+
+        if request.method == "POST":
+            code = (request.form.get("code") or "").strip()
+            if totp_from_secret(user.mfa_secret).verify(code, valid_window=1):
+                user.mfa_enabled = True
+                db.session.commit()
+                flash("Multi-factor authentication enabled.", "success")
+                return redirect(url_for("dashboard"))
+            else:
+                flash("Invalid code. Try again.", "error")
+
+        return render_template("mfa_setup.html", secret=user.mfa_secret, otp_uri=otp_uri)
+
+    @app.route("/mfa", methods=["GET", "POST"])
+    def mfa_verify():
+        # Called after password step succeeds but before final login
+        uid = session.get("pre_2fa_uid")
+        if not uid:
+            return redirect(url_for("login"))
+        user = User.query.get(uid)
+        if not user:
+            return redirect(url_for("login"))
+
+        if request.method == "POST":
+            code = (request.form.get("code") or "").strip()
+            if user.mfa_secret and totp_from_secret(user.mfa_secret).verify(code, valid_window=1):
+                session.pop("pre_2fa_uid", None)
+                login_user(user)
+                return redirect(url_for("dashboard"))
+            flash("Invalid code.", "error")
+
+        return render_template("mfa_verify.html")
+
+                # After successful password check:
+        ensure_mfa_fields(user)
+        if user.mfa_enabled:
+            session["pre_2fa_uid"] = user.id
+            return redirect(url_for("mfa_verify"))
+
+        # If no MFA, continue normal login:
+        login_user(user)
+        return redirect(url_for("dashboard"))
+
+
 
     # ---------------- home / dashboard ----------------
     @app.route("/")
