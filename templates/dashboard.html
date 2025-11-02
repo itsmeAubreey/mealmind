@@ -97,6 +97,14 @@
 
     <!-- Staff: Managers only -->
     {% if current_user.role == 'Manager' %}
+      <a href="{{ url_for('assistant') }}" class="tile"
+   style="display:inline-block; width:220px; margin:14px; padding:18px; border-radius:18px;
+          background:linear-gradient(135deg,#ffe29a,#ffa99f); color:#212529; text-decoration:none;
+          box-shadow:0 12px 35px rgba(0,0,0,.08);">
+  <div style="font-size:18px; font-weight:800; margin-bottom:6px;">Kitchen Assistant</div>
+  <div style="font-size:13px; opacity:.85;">AI suggestions for menus & substitutions.</div>
+</a>
+
       <a class="tile red" href="{{ url_for('staff_list') }}">
         <div class="tile-head">
           <div class="tile-icon">📊</div>
@@ -107,5 +115,7 @@
     {% endif %}
   </div>
 </div>
+
+
 
 {% endblock %}
