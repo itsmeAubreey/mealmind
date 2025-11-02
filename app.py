@@ -1170,12 +1170,16 @@ def create_app():
 @app.route("/assistant", methods=["GET"])
 @login_required
 def assistant():
-    # If you have an assistant_is_configured() helper, keep passing it:
+    # If you have assistant_is_configured(), keep the hint; otherwise default to True
     try:
-        ready = assistant_is_configured()  # or set to True if you don't use this check
+        ready = assistant_is_configured()
     except NameError:
         ready = True
     return render_template("assistant.html", assistant_ready=ready)
+
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
 
             """
 <!doctype html>
