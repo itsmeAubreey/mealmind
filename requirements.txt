@@ -24,4 +24,4 @@ gunicorn>=21.2,<23.0
 # pandas>=2.0,<3.0
 
 # ---- Azure OpenAI / OpenAI SDK
-openai>=1.30.0,<2.0
+openai==1.14.3
