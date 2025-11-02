@@ -1166,14 +1166,17 @@ def create_app():
             "Never commit changes—only SUGGEST. The user makes final decisions."
         )
 
-    @app.route("/assistant", methods=["GET"])
-    @login_required
-    def assistant():
-        """
-        Minimal chat UI that posts to /api/ai/chat.
-        Inline template keeps this to a single file.
-        """
-        return render_template_string(
+   # Replace your current /assistant route with this:
+@app.route("/assistant", methods=["GET"])
+@login_required
+def assistant():
+    # If you have an assistant_is_configured() helper, keep passing it:
+    try:
+        ready = assistant_is_configured()  # or set to True if you don't use this check
+    except NameError:
+        ready = True
+    return render_template("assistant.html", assistant_ready=ready)
+
             """
 <!doctype html>
 <html>
