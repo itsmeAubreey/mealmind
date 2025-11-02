@@ -1,24 +1,41 @@
-{% extends 'base.html' %}
-{% block title %}Login{% endblock %}
-{% block content %}
-<h1 style="margin-bottom:16px;">Login</h1>
+<!doctype html>
+<html><head>
+  <meta charset="utf-8"><title>Login · MealMind</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#fff;}
+    header{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid #eee;}
+    .wrap{max-width:520px;margin:28px auto;padding:0 16px}
+    label{display:block;margin:10px 0 4px}
+    input{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px}
+    button{margin-top:12px;padding:10px 14px;border:1px solid #111;background:#111;color:#fff;border-radius:10px;cursor:pointer}
+    .flash{background:#fdecea;color:#b71c1c;border:1px solid #f5c6c6;padding:10px 12px;border-radius:8px;margin-bottom:14px;}
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>Kitchen Management Tool</strong></div>
+    <nav><a href="/dashboard">Dashboard</a></nav>
+  </header>
 
-{% if error %}
-  <div style="background:#fdecea;color:#b71c1c;border:1px solid #f5c6c6;padding:10px 12px;border-radius:8px;margin-bottom:14px;">
-    {{ error }}
+  <div class="wrap">
+    <h1>Login</h1>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+        {% for cat,msg in msgs %}<div class="flash"><strong>{{cat}}:</strong> {{msg}}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% if error %}<div class="flash">{{ error }}</div>{% endif %}
+
+    <form method="post">
+      <label for="username">Username</label>
+      <input id="username" name="username" autofocus required>
+
+      <label for="password">Password</label>
+      <input id="password" type="password" name="password" required>
+
+      <button type="submit">Sign in</button>
+    </form>
   </div>
-{% endif %}
-
-<form method="post" class="form-grid">
-  <label for="username">Username</label>
-  <input id="username" name="username" autofocus required>
-
-  <label for="password">Password</label>
-  <input id="password" type="password" name="password" required>
-</form>
-
-<div style="margin-top:14px;">
-  <button class="btn" onclick="this.closest('body').querySelector('form').submit()">Login</button>
-  <a class="btn secondary" href="#" aria-disabled="true" onclick="return false;">Forgot Password?</a>
-</div>
-{% endblock %}
+</body></html>
