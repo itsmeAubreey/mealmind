@@ -1,37 +1,32 @@
-# app.py — MealMind / Flask app with Azure OpenAI Kitchen Assistant (fixed & consolidated)
-# - Keeps Residents, Inventory, Menu (legacy + builder + scheduler + planned), Staff
-# - Adds a working AI chatbot at /assistant (posts to /api/ai/chat)
-# - Grounds assistant with inventory, menus, and planned schedules (read-only)
+# app.py — MealMind / Flask app (fixed)
+# - Residents, Inventory, Menu (legacy + builder + scheduler + planned), Staff
+# - Forgot password + simple MFA (TOTP) without Entra ID
 #
-# Required env (Azure App Service → Configuration):
+# Required App Service settings:
 #   SECRET_KEY
-#   SQLALCHEMY_DATABASE_URI             (e.g., sqlite:////home/site/data/app.db)
+#   SQLALCHEMY_DATABASE_URI (e.g., sqlite:////home/site/data/app.db)
 #   SQLALCHEMY_TRACK_MODIFICATIONS=False
 #   FLASK_ENV=production
 #   FLASK_DEBUG=0
 #   SCM_DO_BUILD_DURING_DEPLOYMENT=1
 #
-# Assistant env:
-#   AZURE_OPENAI_API_KEY
-#   AZURE_OPENAI_ENDPOINT         (e.g., https://<your-aoai>.openai.azure.com)
-#   AZURE_OPENAI_API_VERSION      (e.g., 2024-10-21)
-#   AZURE_OPENAI_MODEL            (your deployment name, e.g., gpt-4o-mini)
-#
-# Pip (requirements.txt) must include at least: Flask, SQLAlchemy, openai, python-dotenv (optional)
+# Optional SMTP (for real emails; otherwise we just log the email body):
+#   SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_USE_TLS=1
 
 import os
 import io
 import csv
+import base64
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-import pyotp, base64
 
+import pyotp
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, send_file, flash, jsonify, render_template_string
+    session, send_file, flash, jsonify
 )
 from sqlalchemy import or_, func
 
@@ -44,24 +39,18 @@ except Exception:
 
 # CSRF-exempt fallback if Flask-WTF isn't installed
 try:
-    from flask_wtf.csrf import csrf_exempt
+    from flask_wtf.csrf import csrf_exempt  # noqa
 except Exception:
-    def csrf_exempt(f):
+    def csrf_exempt(f):  # type: ignore
         return f
 
-# Azure OpenAI (new SDK)
-try:
-    from openai import AzureOpenAI
-except Exception:
-    AzureOpenAI = None  # handle gracefully if not installed
-
-# --- Your models (must exist in models.py) ---
+# ---------- models ----------
 from models import (
     db, User, Resident, InventoryItem,
     Menu, MenuIngredient, MenuSchedule, MenuScheduleItem
 )
 
-# -------------------------- helpers --------------------------
+# ---------- helpers ----------
 def _parse_date(s):
     if not s:
         return None
@@ -72,74 +61,6 @@ def _parse_date(s):
         except ValueError:
             continue
     return None
-
-# ----- Password reset signer -----
-def _reset_signer(secret_key: str):
-    # salt prevents collisions with any other signers in your app
-    return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
-
-def make_reset_token(secret_key: str, user_id: int, email: str) -> str:
-    return _reset_signer(secret_key).dumps({"uid": user_id, "email": email})
-
-def load_reset_token(secret_key: str, token: str, max_age_sec: int = 1800):
-    # 30 minutes default expiry
-    return _reset_signer(secret_key).loads(token, max_age=max_age_sec)
-
-# ----- Email sender (prints to logs if SMTP not configured) -----
-def send_email(to_addr: str, subject: str, body: str):
-    """
-    If you DON'T have SMTP env vars set, this will just print to console/logs.
-    To enable SMTP later, set:
-      SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_USE_TLS=1
-    """
-    import os, smtplib
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT") or 0)
-    user = os.getenv("SMTP_USERNAME")
-    pwd  = os.getenv("SMTP_PASSWORD")
-    use_tls = os.getenv("SMTP_USE_TLS") == "1"
-
-    if not host or not port:
-        print("\n=== Simulated email ===")
-        print(f"TO: {to_addr}\nSUBJECT: {subject}\n\n{body}")
-        print("=======================\n")
-        return
-
-    from email.message import EmailMessage
-    msg = EmailMessage()
-    msg["From"] = user
-    msg["To"] = to_addr
-    msg["Subject"] = subject
-    msg.set_content(body)
-
-    with smtplib.SMTP(host, port) as s:
-        if use_tls:
-            s.starttls()
-        if user and pwd:
-            s.login(user, pwd)
-        s.send_message(msg)
-
-# ----- MFA helpers (TOTP) -----
-def ensure_mfa_fields(user):
-    # Works even if columns were newly added; avoids AttributeError crashes
-    if not hasattr(user, "mfa_enabled"):
-        user.mfa_enabled = False
-    if not hasattr(user, "mfa_secret") or not user.mfa_secret:
-        user.mfa_secret = None
-
-def make_new_mfa_secret() -> str:
-    # 32-char base32 secret (compatible with Google Authenticator)
-    return pyotp.random_base32()
-
-def totp_from_secret(secret: str):
-    return pyotp.TOTP(secret)
-
-def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
-    return totp_from_secret(secret).provisioning_uri(name=username, issuer_name=issuer)
-
-ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0;
-ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(64);
-
 
 def _calc_age(bday):
     if not bday:
@@ -162,45 +83,86 @@ def model_has_column(model, name):
 def register_age_helper(app):
     app.jinja_env.globals["age"] = _calc_age
 
-def dashboard_tiles_for(role: str):
-    manager = [
-        ("Residents", url_for("residents_list"), "purple"),
-        ("Inventory", url_for("inventory_list"), "green"),
-        ("Menu", url_for("menu_hub"), "blue"),
-        ("Staff", url_for("staff_list"), "red"),
-        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
-    ]
-    dietitian = [
-        ("Residents", url_for("residents_list"), "purple"),
-        ("Inventory", url_for("inventory_list"), "green"),
-        ("Menu", url_for("menu_hub"), "blue"),
-        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
-    ]
-    cook = [
-        ("Residents", url_for("residents_list"), "purple"),
-        ("Inventory", url_for("inventory_list"), "green"),
-        ("Menu", url_for("menu_hub"), "blue"),
-        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
-    ]
-    aide = [
-        ("Residents", url_for("residents_list"), "purple"),
-        ("Inventory", url_for("inventory_list"), "green"),
-        ("Menu", url_for("planned_menus"), "blue"),
-        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
-    ]
-    mapping = {
-        "Manager": manager,
-        "Dietitian": dietitian,
-        "Cook": cook,
-        "Dietary Aide": aide,
-    }
-    return mapping.get(role or "", aide) 
+# ----- ensure MFA columns exist (for SQLite too) -----
+def ensure_user_table_has_mfa_columns():
+    try:
+        insp = db.inspect(db.engine)
+        if "user" not in insp.get_table_names():
+            return
+        cols = {c["name"] for c in insp.get_columns("user")}
+        stmts = []
+        if "mfa_enabled" not in cols:
+            stmts.append('ALTER TABLE "user" ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0')
+        if "mfa_secret" not in cols:
+            stmts.append('ALTER TABLE "user" ADD COLUMN mfa_secret VARCHAR(64)')
+        if stmts:
+            from sqlalchemy import text
+            with db.engine.begin() as conn:
+                for s in stmts:
+                    conn.execute(text(s))
+    except Exception as e:
+        print("MFA column check failed:", e)
 
-# -------------------------- app factory --------------------------
+# ----- Email (logs if SMTP not configured) -----
+def send_email(to_addr: str, subject: str, body: str):
+    import smtplib
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT") or 0)
+    user = os.getenv("SMTP_USERNAME")
+    pwd  = os.getenv("SMTP_PASSWORD")
+    use_tls = os.getenv("SMTP_USE_TLS") == "1"
+
+    if not host or not port:
+        print("\n=== Simulated email ===")
+        print(f"TO: {to_addr}\nSUBJECT: {subject}\n\n{body}")
+        print("=======================\n")
+        return
+
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = user or "no-reply@mealmind.local"
+    msg["To"] = to_addr
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    with smtplib.SMTP(host, port) as s:
+        if use_tls:
+            s.starttls()
+        if user and pwd:
+            s.login(user, pwd)
+        s.send_message(msg)
+
+# ----- Reset token -----
+def _reset_signer(secret_key: str):
+    return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
+
+def make_reset_token(secret_key: str, user_id: int, email: str) -> str:
+    return _reset_signer(secret_key).dumps({"uid": user_id, "email": email})
+
+def load_reset_token(secret_key: str, token: str, max_age_sec: int = 1800):
+    return _reset_signer(secret_key).loads(token, max_age=max_age_sec)
+
+# ----- MFA helpers -----
+def ensure_mfa_fields(user):
+    if not hasattr(user, "mfa_enabled"):
+        user.mfa_enabled = False
+    if not hasattr(user, "mfa_secret") or not user.mfa_secret:
+        user.mfa_secret = None
+
+def make_new_mfa_secret() -> str:
+    return pyotp.random_base32()
+
+def totp_from_secret(secret: str):
+    return pyotp.TOTP(secret)
+
+def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
+    return totp_from_secret(secret).provisioning_uri(name=username, issuer_name=issuer)
+
+# ----------------------- app factory -----------------------
 def create_app():
     app = Flask(__name__)
 
-    # ---- Configuration (Azure/env-first, with safe defaults) ----
+    # Config
     instance_dir = os.path.join(os.getcwd(), "instance")
     os.makedirs(instance_dir, exist_ok=True)
     local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
@@ -210,6 +172,7 @@ def create_app():
         or os.getenv("DATABASE_URL")
         or local_sqlite
     )
+
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = (
         os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
@@ -231,7 +194,7 @@ def create_app():
     def inject_current_user():
         return {"current_user": session.get("user")}
 
-    # ---------------- guards ----------------
+    # ---------- guards ----------
     def login_required(f):
         @wraps(f)
         def w(*a, **kw):
@@ -239,6 +202,18 @@ def create_app():
                 return redirect(url_for("login"))
             return f(*a, **kw)
         return w
+
+    def _finalize_login(user):
+        session["user"] = {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "first_name": getattr(user, "first_name", "") or "",
+            "last_name": getattr(user, "last_name", "") or "",
+        }
+
+    def login_user(user):
+        _finalize_login(user)
 
     def current_role():
         return session.get("user", {}).get("role")
@@ -257,7 +232,7 @@ def create_app():
 
     @app.before_request
     def enforce_pw_change():
-        allowed = {"login", "logout", "change_password", "static", "assistant", "ai_chat", "home"}
+        allowed = {"login", "logout", "change_password", "static", "healthz", "forgot_password", "reset_password"}
         u = session.get("user")
         if not u:
             return
@@ -266,7 +241,7 @@ def create_app():
             if request.endpoint not in allowed:
                 return redirect(url_for("change_password"))
 
-    # ---------------- auth ----------------
+    # ---------- auth ----------
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
@@ -275,17 +250,20 @@ def create_app():
             user = User.query.filter(
                 or_(User.username.ilike(username), User.employee_id.ilike(username))
             ).first()
+
             if user and user.check_password(password):
-                session["user"] = {
-                    "id": user.id,
-                    "username": user.username,
-                    "role": user.role,
-                    "first_name": getattr(user, "first_name", "") or "",
-                    "last_name": getattr(user, "last_name", "") or "",
-                }
+                # MFA gate if enabled
+                ensure_mfa_fields(user)
+                if user.mfa_enabled:
+                    session["pre_2fa_uid"] = user.id
+                    return redirect(url_for("mfa_verify"))
+
+                # normal login
+                login_user(user)
                 if getattr(user, "must_change_password", False):
                     return redirect(url_for("change_password"))
                 return redirect(url_for("dashboard"))
+
             flash("Invalid credentials.", "error")
         return render_template("login.html")
 
@@ -316,8 +294,8 @@ def create_app():
                 return redirect(url_for("dashboard"))
         return render_template("change_password.html", error=error)
 
-    #==========================================================
-        @app.route("/forgot", methods=["GET", "POST"])
+    # ---------- Forgot / Reset ----------
+    @app.route("/forgot", methods=["GET", "POST"])
     def forgot_password():
         if request.method == "POST":
             email = (request.form.get("email") or "").strip().lower()
@@ -359,22 +337,23 @@ def create_app():
             elif p1 != p2:
                 flash("Passwords do not match.", "error")
             else:
-                user.set_password(p1)  # assumes your User has set_password()
+                user.set_password(p1)
                 db.session.commit()
                 flash("Password updated. You can sign in now.", "success")
                 return redirect(url_for("login"))
         return render_template("reset.html")
 
-        @app.route("/mfa/setup", methods=["GET", "POST"])
+    # ---------- MFA ----------
+    @app.route("/mfa/setup", methods=["GET", "POST"])
     @login_required
     def mfa_setup():
-        user = current_user
+        # only the logged-in user can set up their MFA
+        user = User.query.get(session["user"]["id"])
         ensure_mfa_fields(user)
         if not user.mfa_secret:
             user.mfa_secret = make_new_mfa_secret()
             db.session.commit()
 
-        # Show QR (as a data URL) or just the secret
         otp_uri = provisioning_uri(user.mfa_secret, username=user.username, issuer="MealMind")
 
         if request.method == "POST":
@@ -391,7 +370,6 @@ def create_app():
 
     @app.route("/mfa", methods=["GET", "POST"])
     def mfa_verify():
-        # Called after password step succeeds but before final login
         uid = session.get("pre_2fa_uid")
         if not uid:
             return redirect(url_for("login"))
@@ -409,19 +387,7 @@ def create_app():
 
         return render_template("mfa_verify.html")
 
-                # After successful password check:
-        ensure_mfa_fields(user)
-        if user.mfa_enabled:
-            session["pre_2fa_uid"] = user.id
-            return redirect(url_for("mfa_verify"))
-
-        # If no MFA, continue normal login:
-        login_user(user)
-        return redirect(url_for("dashboard"))
-
-
-
-    # ---------------- home / dashboard ----------------
+    # ---------- home / dashboard ----------
     @app.route("/")
     def home():
         return redirect(url_for("dashboard") if "user" in session else url_for("login"))
@@ -430,7 +396,13 @@ def create_app():
     @login_required
     def dashboard():
         role = session.get("user", {}).get("role")
-        tiles = dashboard_tiles_for(role)
+        # simple tiles list without AI link
+        tiles = [
+            ("Residents", url_for("residents_list"), "purple"),
+            ("Inventory", url_for("inventory_list"), "green"),
+            ("Menu", url_for("menu_hub"), "blue"),
+            *([("Staff", url_for("staff_list"), "red")] if role == "Manager" else []),
+        ]
         return render_template("dashboard.html", tiles=tiles)
 
     # ======================================================================
@@ -461,8 +433,11 @@ def create_app():
 
     @app.route("/residents/new", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Dietitian")
     def residents_new():
+        if current_role() not in ("Manager", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         if request.method == "POST":
             first_name = (request.form.get("first_name") or "").strip()
             last_name  = (request.form.get("last_name") or "").strip()
@@ -497,8 +472,11 @@ def create_app():
 
     @app.route("/residents/<int:rid>/edit", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Dietitian")
     def residents_edit(rid):
+        if current_role() not in ("Manager", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         r = Resident.query.get_or_404(rid)
         if request.method == "POST":
             first_name = (request.form.get("first_name") or "").strip()
@@ -550,8 +528,10 @@ def create_app():
 
     @app.route("/residents/<int:rid>/delete", methods=["POST"])
     @login_required
-    @roles_required("Manager", "Dietitian")
     def residents_delete(rid):
+        if current_role() not in ("Manager", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
         r = Resident.query.get_or_404(rid)
         db.session.delete(r)
         db.session.commit()
@@ -570,8 +550,10 @@ def create_app():
     # ======================================================================
     @app.route("/staff")
     @login_required
-    @roles_required("Manager")
     def staff_list():
+        if current_role() != "Manager":
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
         q = (request.args.get("q") or "").strip()
         role_filter = (request.args.get("role") or "all").strip()
         query = User.query
@@ -591,8 +573,11 @@ def create_app():
 
     @app.route("/staff/new", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager")
     def staff_new():
+        if current_role() != "Manager":
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         if request.method == "POST":
             first_name  = (request.form.get("first_name")  or "").strip()
             last_name   = (request.form.get("last_name")   or "").strip()
@@ -627,8 +612,11 @@ def create_app():
 
     @app.route("/staff/<int:uid>/edit", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager")
     def staff_edit(uid):
+        if current_role() != "Manager":
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         u = User.query.get_or_404(uid)
         if request.method == "POST":
             first_name  = (request.form.get("first_name")  or "").strip()
@@ -672,8 +660,10 @@ def create_app():
 
     @app.route("/staff/<int:uid>/delete", methods=["POST"])
     @login_required
-    @roles_required("Manager")
     def staff_delete(uid):
+        if current_role() != "Manager":
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
         u = User.query.get_or_404(uid)
         if session.get("user", {}).get("id") == u.id:
             flash("You cannot delete your own account.", "error")
@@ -687,8 +677,11 @@ def create_app():
     # ======================================================================
     @app.route("/inventory")
     @login_required
-    @roles_required("Manager", "Cook", "Dietary Aide")
     def inventory_list():
+        if current_role() not in ("Manager", "Cook", "Dietary Aide"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         q = (request.args.get("q") or "").strip()
         show = (request.args.get("show") or "all").strip()
         query = InventoryItem.query
@@ -707,8 +700,11 @@ def create_app():
 
     @app.route("/inventory/new", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Cook")
     def inventory_new():
+        if current_role() not in ("Manager", "Cook"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
             unit = (request.form.get("unit") or "").strip()
@@ -736,8 +732,11 @@ def create_app():
 
     @app.route("/inventory/<int:iid>/edit", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Cook", "Dietary Aide")
     def inventory_edit(iid):
+        if current_role() not in ("Manager", "Cook", "Dietary Aide"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         it = InventoryItem.query.get_or_404(iid)
         limited = (current_role() == "Dietary Aide")
 
@@ -778,8 +777,10 @@ def create_app():
 
     @app.route("/inventory/<int:iid>/delete", methods=["POST"])
     @login_required
-    @roles_required("Manager", "Cook")
     def inventory_delete(iid):
+        if current_role() not in ("Manager", "Cook"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
         it = InventoryItem.query.get_or_404(iid)
         db.session.delete(it)
         db.session.commit()
@@ -939,8 +940,11 @@ def create_app():
 
     @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Dietitian")
     def menu_builder():
+        if current_role() not in ("Manager", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         errors, values = [], {}
 
@@ -999,8 +1003,11 @@ def create_app():
 
     @app.route("/menu/builder/<int:menu_id>/edit", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Dietitian")
     def menu_builder_edit(menu_id: int):
+        if current_role() not in ("Manager", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         m = Menu.query.get_or_404(menu_id)
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         errors, values = [], {}
@@ -1051,8 +1058,10 @@ def create_app():
 
     @app.route("/menu/builder/<int:menu_id>/delete", methods=["POST"])
     @login_required
-    @roles_required("Manager", "Dietitian")
     def menu_builder_delete(menu_id: int):
+        if current_role() not in ("Manager", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
         m = Menu.query.get_or_404(menu_id)
         title = m.title
         db.session.delete(m)
@@ -1078,8 +1087,11 @@ def create_app():
 
     @app.route("/menu/scheduler", methods=["GET", "POST"])
     @login_required
-    @roles_required("Manager", "Cook", "Dietitian")
     def menu_scheduler():
+        if current_role() not in ("Manager", "Cook", "Dietitian"):
+            flash("You do not have access to that page.", "error")
+            return redirect(url_for("dashboard"))
+
         menus = Menu.query.order_by(Menu.meal_type, Menu.title).all()
         inventory_items = InventoryItem.query.order_by(InventoryItem.name).all()
 
@@ -1271,18 +1283,15 @@ def create_app():
 
         return render_template("planned_menu_view.html", day_value=d, blocks=detail)
 
-   
-
-    # -------------------------- done --------------------------
+    # ---------- done ----------
     return app
 
 
-# -------------------------- module-level app (Azure/Gunicorn) --------------------------
+# ---------------- module-level app for gunicorn ----------------
 app = create_app()
 with app.app_context():
-    # Create tables on first boot; you can still use migrations later
     db.create_all()
-    # Optional seed: create a default Manager if users table is empty
+    ensure_user_table_has_mfa_columns()
     if not User.query.first():
         mgr = User(
             first_name="",
@@ -1301,11 +1310,11 @@ with app.app_context():
         db.session.commit()
         print("Seeded manager (manager / 1234)")
 
-    @app.route("/healthz")
-    def healthz():
-        return "ok", 200
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
 
-
-# -------------------------- dev entrypoint --------------------------
+# ------------- dev entry -------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=os.getenv("FLASK_DEBUG", "0") == "1")
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")),
+            debug=os.getenv("FLASK_DEBUG", "0") == "1")
