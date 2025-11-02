@@ -31,7 +31,7 @@
   <div class="wrap">
     {% if not assistant_ready %}
       <div class="warn">
-        Assistant is not fully configured. Add AZURE_OPENAI_* environment variables in Azure App Service Settings.
+        Assistant is not fully configured. Add AZURE_OPENAI_* variables in Azure App Service → Configuration.
       </div>
     {% endif %}
 
@@ -61,19 +61,17 @@
     }
 
     async function callAssistant(userText){
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/ai/chat', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ message: userText, history })
       });
       const data = await res.json();
-      if(!data.ok){
-        addRow('assistant', 'Error: ' + (data.error || 'Unknown error'));
-        return;
+      addRow('assistant', data.reply || ('Error: ' + (data.error || 'Unknown error')));
+      if (data.reply){
+        history.push({role:'user', content:userText});
+        history.push({role:'assistant', content:data.reply});
       }
-      history.push({role:'user', content:userText});
-      history.push({role:'assistant', content:data.reply});
-      addRow('assistant', data.reply);
     }
 
     send.addEventListener('click', () => {
