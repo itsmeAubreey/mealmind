@@ -409,21 +409,23 @@ def create_app():
     def home():
         return redirect(url_for("dashboard") if "user" in session else url_for("login"))
 
-     @app.route("/dashboard")
+    @app.route("/dashboard")
     @login_required
     def dashboard():
-        user = session.get("user") or {}
-        role = user.get("role", "Dietary Aide")
-    
-        tiles = [
-            ("Residents", url_for("residents_list"), "purple"),
-            ("Inventory", url_for("inventory_list"), "green"),
-            ("Menu", url_for("menu_hub"), "blue"),
-        ]
-        if role == "Manager":
-            tiles.append(("Staff", url_for("staff_list"), "red"))
-    
-        return render_template("dashboard.html", tiles=tiles)
+    role = session.get("user", {}).get("role")
+
+    # 4-tuple per tile: (label, href, color, hint)
+    tiles = [
+        ("Residents",  url_for("residents_list"),  "purple", "View & print resident cards"),
+        ("Inventory",  url_for("inventory_list"),  "green",  "Stock levels & CSV export"),
+        ("Menu",       url_for("menu_hub"),        "blue",   "Plan meals & ingredients"),
+    ]
+
+    if role == "Manager":
+        tiles.append(("Staff", url_for("staff_list"), "red", "Add/Edit staff & roles"))
+
+    return render_template("dashboard.html", tiles=tiles)
+
 
 
     # ======================================================================
