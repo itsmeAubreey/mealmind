@@ -1,15 +1,23 @@
-# app.py — MealMind / Flask app with Azure OpenAI Kitchen Assistant
-# - Keeps your existing routes for Residents, Inventory, Menus, Scheduling
-# - Adds a working AI chatbot at /assistant using Azure OpenAI (chat completions)
-# - Reads inventory/menus/schedules to ground assistant suggestions
+# app.py — MealMind / Flask app with Azure OpenAI Kitchen Assistant (fixed & consolidated)
+# - Keeps Residents, Inventory, Menu (legacy + builder + scheduler + planned), Staff
+# - Adds a working AI chatbot at /assistant (posts to /api/ai/chat)
+# - Grounds assistant with inventory, menus, and planned schedules (read-only)
 #
-# Env required for the AI:
+# Required env (Azure App Service → Configuration):
+#   SECRET_KEY
+#   SQLALCHEMY_DATABASE_URI             (e.g., sqlite:////home/site/data/app.db)
+#   SQLALCHEMY_TRACK_MODIFICATIONS=False
+#   FLASK_ENV=production
+#   FLASK_DEBUG=0
+#   SCM_DO_BUILD_DURING_DEPLOYMENT=1
+#
+# Assistant env:
 #   AZURE_OPENAI_API_KEY
-#   AZURE_OPENAI_API_VERSION   (e.g., 2024-10-21)
-#   AZURE_OPENAI_ENDPOINT      (e.g., https://<your-aoai>.openai.azure.com/)
-#   AZURE_OPENAI_MODEL         (your deployment name, e.g., gpt-4o-mini)
+#   AZURE_OPENAI_ENDPOINT         (e.g., https://<your-aoai>.openai.azure.com)
+#   AZURE_OPENAI_API_VERSION      (e.g., 2024-10-21)
+#   AZURE_OPENAI_MODEL            (your deployment name, e.g., gpt-4o-mini)
 #
-# NOTE: This file is a consolidated, Azure-ready replacement for your app.py.
+# Pip (requirements.txt) must include at least: Flask, SQLAlchemy, openai, python-dotenv (optional)
 
 import os
 import io
@@ -17,59 +25,38 @@ import csv
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
-from openai import AzureOpenAI
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
     session, send_file, flash, jsonify, render_template_string
 )
-from flask_migrate import Migrate
 from sqlalchemy import or_, func
 
-# Azure OpenAI client (new OpenAI SDK)
-try:
-    from openai import AzureOpenAI
-except Exception:
-    AzureOpenAI = None  # Safe import if package not installed
-
-# models.py must be in the same folder
-from models import (
-    db, User, Resident, InventoryItem,
-    Menu, MenuIngredient, MenuSchedule, MenuScheduleItem
-)
-
-# Optional .env (local dev convenience)
+# Optional .env for local dev
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
 
+# CSRF-exempt fallback if Flask-WTF isn't installed
 try:
     from flask_wtf.csrf import csrf_exempt
 except Exception:
-    def csrf_exempt(f):  # no-op fallback if CSRF isn't enabled
+    def csrf_exempt(f):
         return f
-# --- Azure OpenAI client (ADD HERE) ---
 
-app = Flask(__name__)
-app.config[...] = ...
-db = SQLAlchemy(app)
-migrate = Migrate(app, db)
-login_manager = LoginManager(app)  # if you have it
-csrf = CSRFProtect(app)            # if you have it
+# Azure OpenAI (new SDK)
+try:
+    from openai import AzureOpenAI
+except Exception:
+    AzureOpenAI = None  # handle gracefully if not installed
 
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")          # e.g., https://mealmind-aoai.openai.azure.com/
-AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")    # e.g., 2024-10-21
-AZURE_OPENAI_MODEL = os.getenv("AZURE_OPENAI_MODEL")                # e.g., gpt-4o-mini
-
-aoai_client = AzureOpenAI(
-    api_key=AZURE_OPENAI_API_KEY,
-    azure_endpoint=AZURE_OPENAI_ENDPOINT,
-    api_version=AZURE_OPENAI_API_VERSION,
+# --- Your models (must exist in models.py) ---
+from models import (
+    db, User, Resident, InventoryItem,
+    Menu, MenuIngredient, MenuSchedule, MenuScheduleItem
 )
-
 
 # -------------------------- helpers --------------------------
 def _parse_date(s):
@@ -110,21 +97,25 @@ def dashboard_tiles_for(role: str):
         ("Inventory", url_for("inventory_list"), "green"),
         ("Menu", url_for("menu_hub"), "blue"),
         ("Staff", url_for("staff_list"), "red"),
+        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
     ]
     dietitian = [
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
         ("Menu", url_for("menu_hub"), "blue"),
+        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
     ]
     cook = [
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
         ("Menu", url_for("menu_hub"), "blue"),
+        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
     ]
     aide = [
         ("Residents", url_for("residents_list"), "purple"),
         ("Inventory", url_for("inventory_list"), "green"),
         ("Menu", url_for("planned_menus"), "blue"),
+        ("Kitchen Assistant (AI)", url_for("assistant"), "gray"),
     ]
     mapping = {
         "Manager": manager,
@@ -134,12 +125,11 @@ def dashboard_tiles_for(role: str):
     }
     return mapping.get(role or "", aide)
 
-
-# -------------------------- factory --------------------------
+# -------------------------- app factory --------------------------
 def create_app():
     app = Flask(__name__)
 
-    # ---- Configuration (Azure/env-first, with solid defaults) -------------
+    # ---- Configuration (Azure/env-first, with safe defaults) ----
     instance_dir = os.path.join(os.getcwd(), "instance")
     os.makedirs(instance_dir, exist_ok=True)
     local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
@@ -149,7 +139,6 @@ def create_app():
         or os.getenv("DATABASE_URL")
         or local_sqlite
     )
-
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = (
         os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
@@ -159,7 +148,6 @@ def create_app():
     app.jinja_env.auto_reload = True
 
     db.init_app(app)
-    Migrate(app, db)
     register_age_helper(app)
 
     INVENTORY_UNITS = [
@@ -198,7 +186,7 @@ def create_app():
 
     @app.before_request
     def enforce_pw_change():
-        allowed = {"login", "logout", "change_password", "static", "assistant", "ai_chat"}
+        allowed = {"login", "logout", "change_password", "static", "assistant", "ai_chat", "home"}
         u = session.get("user")
         if not u:
             return
@@ -657,21 +645,8 @@ def create_app():
         filename = f"inventory_{status or 'all'}.csv"
         return send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
 
-    @app.route("/inventory/<int:iid>/bump", methods=["POST"])
-    @login_required
-    @roles_required("Manager", "Cook", "Dietary Aide")
-    def inventory_bump(iid):
-        item = InventoryItem.query.get_or_404(iid)
-        try:
-            delta = float(request.form.get("delta", "0"))
-        except Exception:
-            delta = 0.0
-        item.quantity = (item.quantity or 0.0) + delta
-        db.session.commit()
-        return redirect(url_for("inventory_list", q=request.args.get("q", ""), show=request.args.get("show", "all")))
-
     # ======================================================================
-    # Legacy One-Day Menu  → /menu/legacy
+    # Legacy One-Day Menu  → /menu/legacy (kept for continuity)
     # ======================================================================
     @app.route("/menu/legacy", methods=["GET", "POST"])
     @login_required
@@ -779,7 +754,7 @@ def create_app():
             return f"<h3>Menu for {day:%Y-%m-%d}</h3>", 200
 
     # ======================================================================
-    # Menu Hub, Builder, API, Scheduler & Daily browser
+    # Menu Hub, Builder, API, Scheduler & Weekly Planned view
     # ======================================================================
     @app.route("/menu")
     @login_required
@@ -1120,113 +1095,20 @@ def create_app():
 
         return render_template("planned_menu_view.html", day_value=d, blocks=detail)
 
-    @app.route("/menu/daily")
-    @login_required
-    def menu_daily():
-        from models import MenuEntry
-        start = _parse_date(request.args.get("start"))
-        end   = _parse_date(request.args.get("end"))
-
-        q = MenuEntry.query
-        if start: q = q.filter(MenuEntry.day >= start)
-        if end:   q = q.filter(MenuEntry.day <= end)
-
-        q = q.order_by(MenuEntry.day.desc(), MenuEntry.meal_type.asc())
-        rows = q.all()
-
-        days = {}
-        for e in rows:
-            days.setdefault(e.day, []).append(e)
-        for d_ in days:
-            days[d_].sort(key=lambda x: {"Breakfast":0,"Lunch":1,"Dinner":2}.get(x.meal_type, 99))
-
-        return render_template("menu_daily.html", days=days, start=start, end=end)
-
-    @app.route("/menu/daily/<string:day_str>")
-    @login_required
-    def menu_daily_view(day_str):
-        from models import MenuEntry
-        d = _parse_date(day_str)
-        if not d:
-            flash("Invalid date.", "error")
-            return redirect(url_for("menu_daily"))
-
-        rows = MenuEntry.query.filter_by(day=d).order_by(MenuEntry.meal_type.asc()).all()
-        return render_template("menu_daily_view.html", day=d, entries=rows)
-
-    @app.route("/menu/daily/<string:day_str>/delete", methods=["POST"])
-    @login_required
-    @roles_required("Manager")
-    def menu_daily_delete(day_str):
-        from models import MenuEntry
-        d = _parse_date(day_str)
-        if not d:
-            flash("Invalid date.", "error")
-            return redirect(url_for("menu_daily"))
-        MenuEntry.query.filter_by(day=d).delete()
-        db.session.commit()
-        flash(f"Deleted daily menu for {d}.", "success")
-        return redirect(url_for("menu_daily"))
-
     # ======================================================================
-    # Azure OpenAI Kitchen Assistant
+    # Azure OpenAI Kitchen Assistant (UI + API)
     # ======================================================================
-    @app.route("/assistant", methods=["GET"])
-def assistant():
-    """Renders the Kitchen Assistant chat page."""
-    return render_template("assistant.html")
-
-
-@app.route("/api/chat", methods=["POST"])
-@csrf_exempt  # keep if you have CSRF enabled; otherwise you may omit
-def api_chat():
-    """
-    Chat endpoint for the Kitchen Assistant.
-    Expects JSON: {"message": "text"} and returns {"reply": "..."}.
-    """
-    data = request.get_json(silent=True) or {}
-    user_text = (data.get("message") or "").strip()
-    if not user_text:
-        return jsonify({"error": "Missing message"}), 400
-
-    system_prompt = (
-        "You are MealMind's Kitchen Assistant for a nursing-home kitchen. "
-        "Give concise, safe suggestions for menus, substitutions, and prep. "
-        "Prefer ingredients that are in stock. When stock is low, propose simple swaps. "
-        "Do not make changes—only suggest. The manager will decide."
-    )
-
-    try:
-        resp = aoai_client.chat.completions.create(
-            model=AZURE_OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
-            temperature=0.4,
-            max_tokens=600,
-        )
-        reply = resp.choices[0].message.content.strip()
-        return jsonify({"reply": reply})
-    except Exception as e:
-        return jsonify({"error": f"Azure OpenAI error: {e}"}), 500
-
-
-   # ----------------------------------------------------
     def _get_aoai_client():
         """
         Create (and cache) the Azure OpenAI client using env vars.
         """
         if AzureOpenAI is None:
-            raise RuntimeError(
-                "openai package not installed. Add `openai` to requirements.txt"
-            )
+            raise RuntimeError("openai package not installed. Add `openai` to requirements.txt")
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
         endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
         if not api_key or not endpoint:
             raise RuntimeError("Missing Azure OpenAI env vars.")
-        # cache on app
         if not hasattr(app, "_aoai_client"):
             app._aoai_client = AzureOpenAI(
                 api_key=api_key,
@@ -1284,12 +1166,12 @@ def api_chat():
             "Never commit changes—only SUGGEST. The user makes final decisions."
         )
 
-    @app.route("/assistant")
+    @app.route("/assistant", methods=["GET"])
     @login_required
     def assistant():
         """
-        A minimal chat UI that posts to /api/ai/chat.
-        Kept inline (no template file required) to keep this as a single-file drop-in.
+        Minimal chat UI that posts to /api/ai/chat.
+        Inline template keeps this to a single file.
         """
         return render_template_string(
             """
@@ -1363,6 +1245,7 @@ btn.onclick = async () => {
 
     @app.route("/api/ai/chat", methods=["POST"])
     @login_required
+    @csrf_exempt
     def ai_chat():
         """
         Accepts: { "message": "..." }
@@ -1389,7 +1272,6 @@ btn.onclick = async () => {
             client = _get_aoai_client()
             model = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o-mini")
 
-            # chat completions (non-streaming)
             resp = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -1409,17 +1291,14 @@ btn.onclick = async () => {
         except Exception as e:
             return jsonify({"reply": f"Assistant error: {e}"}), 200
 
-    # ======================================================================
-    # end Azure OpenAI integration
-    # ======================================================================
-
+    # -------------------------- done --------------------------
     return app
 
 
 # -------------------------- module-level app (Azure/Gunicorn) --------------------------
 app = create_app()
 with app.app_context():
-    # Create tables on first run; keep migrations enabled for later
+    # Create tables on first boot; you can still use migrations later
     db.create_all()
     # Optional seed: create a default Manager if users table is empty
     if not User.query.first():
@@ -1432,7 +1311,10 @@ with app.app_context():
             role="Manager",
             must_change_password=False,
         )
-        mgr.set_password("1234")
+        try:
+            mgr.set_password("1234")
+        except Exception:
+            pass
         db.session.add(mgr)
         db.session.commit()
         print("Seeded manager (manager / 1234)")
@@ -1440,4 +1322,4 @@ with app.app_context():
 
 # -------------------------- dev entrypoint --------------------------
 if __name__ == "__main__":
-    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1")
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=os.getenv("FLASK_DEBUG", "0") == "1")
