@@ -1,85 +1,95 @@
-{% extends "base.html" %}
-{% block title %}Kitchen Assistant{% endblock %}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Kitchen Assistant · MealMind</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#fff;}
+    header{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid #eee;}
+    a.btn{padding:8px 12px;border:1px solid #ddd;border-radius:10px;text-decoration:none;color:#111}
+    .wrap{max-width:920px;margin:28px auto;padding:0 16px;}
+    .chat{border:1px solid #eee;border-radius:16px;padding:16px;min-height:320px}
+    .row{margin-bottom:12px}
+    .role{font-size:12px;opacity:.7;margin-bottom:4px}
+    .bubble{background:#f7f7f8;border-radius:12px;padding:10px}
+    .me .bubble{background:#e7f1ff}
+    .controls{display:flex;gap:8px;margin-top:12px}
+    textarea{flex:1;min-height:64px;padding:10px;border-radius:10px;border:1px solid #ddd}
+    button{padding:10px 14px;border:1px solid #111;background:#111;color:#fff;border-radius:10px;cursor:pointer}
+    .warn{background:#fff4e5;border:1px solid #ffd7a0;color:#8a4b00;padding:10px;border-radius:10px;margin-bottom:16px}
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>Kitchen Assistant</strong></div>
+    <nav>
+      <a class="btn" href="/dashboard">Back to Dashboard</a>
+    </nav>
+  </header>
 
-{% block content %}
-<div class="container" style="max-width: 900px; margin: 30px auto;">
-  <h2 style="margin-bottom: 10px;">Kitchen Assistant (AI)</h2>
-  <p class="text-muted" style="margin-top:0">
-    Ask menu ideas, substitutions, or quick planning tips. The AI only suggests—<b>you</b> make final decisions.
-  </p>
+  <div class="wrap">
+    {% if not assistant_ready %}
+      <div class="warn">
+        Assistant is not fully configured. Add AZURE_OPENAI_* environment variables in Azure App Service Settings.
+      </div>
+    {% endif %}
 
-  <div id="chat" style="height: 460px; overflow-y: auto; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.05);">
-    <div class="bot msg">
-      👋 Hi! I’m MealMind’s Kitchen Assistant. Ask me for a 3-day menu using ingredients you have,
-      or request substitutions when stock is low.
+    <div id="chat" class="chat"></div>
+
+    <div class="controls">
+      <textarea id="msg" placeholder="Ask about menu planning, substitutions, allergies, inventory ideas…"></textarea>
+      <button id="send">Send</button>
     </div>
   </div>
 
-  <!-- Pass the API URL to JS safely via data attribute -->
-  <form id="chatForm" data-chat-url={{ url_for('api_chat')|tojson }} style="display:flex; gap:10px; margin-top:12px;">
-    <input id="msg" type="text" class="form-control"
-           placeholder="Type your question… (e.g., Plan a 2-day low-sodium menu for 80 residents)"
-           autocomplete="off" required />
-    <button id="sendBtn" class="btn btn-primary" type="submit" style="white-space:nowrap;">Send</button>
-  </form>
-</div>
+  <script>
+    const chat = document.getElementById('chat');
+    const msg = document.getElementById('msg');
+    const send = document.getElementById('send');
 
-<style>
-  #chat .msg {padding:10px 12px; margin:8px 0; border-radius:10px; max-width: 92%;}
-  #chat .bot  {background:#f2f5ff; border:1px solid #e0e7ff;}
-  #chat .user {background:#e6ffed; border:1px solid #c3f7d0; margin-left:auto;}
-  .text-muted {color:#6b7280;}
-</style>
+    const history = [];
 
-<script>
-  (function () {
-    const chatBox = document.getElementById('chat');
-    const form    = document.getElementById('chatForm');
-    const input   = document.getElementById('msg');
-    const sendBtn = document.getElementById('sendBtn');
-
-    const CHAT_URL = form.getAttribute('data-chat-url');
-
-    function addMessage(text, who) {
-      const div = document.createElement('div');
-      div.className = who + ' msg';
-      div.textContent = text;
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
+    function addRow(role, text){
+      const row = document.createElement('div');
+      row.className = 'row ' + (role === 'user' ? 'me' : 'ai');
+      row.innerHTML = `
+        <div class="role">${role === 'user' ? 'You' : 'Assistant'}</div>
+        <div class="bubble">${text.replace(/</g,"&lt;")}</div>
+      `;
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const text = input.value.trim();
-      if (!text) return;
+    async function callAssistant(userText){
+      const res = await fetch('/api/chat', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ message: userText, history })
+      });
+      const data = await res.json();
+      if(!data.ok){
+        addRow('assistant', 'Error: ' + (data.error || 'Unknown error'));
+        return;
+      }
+      history.push({role:'user', content:userText});
+      history.push({role:'assistant', content:data.reply});
+      addRow('assistant', data.reply);
+    }
 
-      addMessage(text, 'user');
-      input.value = '';
-      input.focus();
+    send.addEventListener('click', () => {
+      const text = msg.value.trim();
+      if(!text) return;
+      addRow('user', text);
+      msg.value = '';
+      callAssistant(text);
+    });
 
-      sendBtn.disabled = true;
-      sendBtn.textContent = 'Thinking…';
-
-      try {
-        const resp = await fetch(CHAT_URL, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ message: text })
-        });
-
-        const data = await resp.json();
-        if (resp.ok) {
-          addMessage(data.reply || '(no reply)', 'bot');
-        } else {
-          addMessage(data.error || 'Something went wrong.', 'bot');
-        }
-      } catch (err) {
-        addMessage('Network error: ' + err.message, 'bot');
-      } finally {
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send';
+    msg.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)){
+        send.click();
       }
     });
-  })();
-</script>
-{% endblock %}
+  </script>
+</body>
+</html>
