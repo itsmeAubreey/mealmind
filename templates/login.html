@@ -10,12 +10,13 @@
     input{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px}
     button{margin-top:12px;padding:10px 14px;border:1px solid #111;background:#111;color:#fff;border-radius:10px;cursor:pointer}
     .flash{background:#fdecea;color:#b71c1c;border:1px solid #f5c6c6;padding:10px 12px;border-radius:8px;margin-bottom:14px;}
+    a.link{color:#111;text-decoration:none;border-bottom:1px dotted #111}
   </style>
 </head>
 <body>
   <header>
     <div><strong>Kitchen Management Tool</strong></div>
-    <nav><a href="/dashboard">Dashboard</a></nav>
+    <nav><a class="link" href="/dashboard">Dashboard</a></nav>
   </header>
 
   <div class="wrap">
@@ -25,7 +26,6 @@
         {% for cat,msg in msgs %}<div class="flash"><strong>{{cat}}:</strong> {{msg}}</div>{% endfor %}
       {% endif %}
     {% endwith %}
-
     {% if error %}<div class="flash">{{ error }}</div>{% endif %}
 
     <form method="post">
