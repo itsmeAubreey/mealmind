@@ -1,9 +1,15 @@
-# app.py — MealMind / Flask app (Azure-ready)
-# Notes:
-# - Uses SQLALCHEMY_DATABASE_URI if present (Azure default), else DATABASE_URL, else local sqlite.
-# - Exposes a top-level `app` so Gunicorn (`gunicorn app:app`) works on Azure.
-# - Performs a safe `db.create_all()` at import time so first deploys work without running migrations.
-# - Seeds a default Manager (manager / 1234) only if no users exist yet.
+# app.py — MealMind / Flask app with Azure OpenAI Kitchen Assistant
+# - Keeps your existing routes for Residents, Inventory, Menus, Scheduling
+# - Adds a working AI chatbot at /assistant using Azure OpenAI (chat completions)
+# - Reads inventory/menus/schedules to ground assistant suggestions
+#
+# Env required for the AI:
+#   AZURE_OPENAI_API_KEY
+#   AZURE_OPENAI_API_VERSION   (e.g., 2024-10-21)
+#   AZURE_OPENAI_ENDPOINT      (e.g., https://<your-aoai>.openai.azure.com/)
+#   AZURE_OPENAI_MODEL         (your deployment name, e.g., gpt-4o-mini)
+#
+# NOTE: This file is a consolidated, Azure-ready replacement for your app.py.
 
 import os
 import io
@@ -14,10 +20,16 @@ from collections import defaultdict
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, send_file, flash, jsonify
+    session, send_file, flash, jsonify, render_template_string
 )
 from flask_migrate import Migrate
 from sqlalchemy import or_, func
+
+# Azure OpenAI client (new OpenAI SDK)
+try:
+    from openai import AzureOpenAI
+except Exception:
+    AzureOpenAI = None  # Safe import if package not installed
 
 # models.py must be in the same folder
 from models import (
@@ -102,7 +114,6 @@ def create_app():
     app = Flask(__name__)
 
     # ---- Configuration (Azure/env-first, with solid defaults) -------------
-    # Azure sets SQLALCHEMY_DATABASE_URI. We also accept DATABASE_URL for portability.
     instance_dir = os.path.join(os.getcwd(), "instance")
     os.makedirs(instance_dir, exist_ok=True)
     local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
@@ -161,7 +172,7 @@ def create_app():
 
     @app.before_request
     def enforce_pw_change():
-        allowed = {"login", "logout", "change_password", "static"}
+        allowed = {"login", "logout", "change_password", "static", "assistant", "ai_chat"}
         u = session.get("user")
         if not u:
             return
@@ -1130,6 +1141,210 @@ def create_app():
         db.session.commit()
         flash(f"Deleted daily menu for {d}.", "success")
         return redirect(url_for("menu_daily"))
+
+    # ======================================================================
+    # Azure OpenAI Kitchen Assistant
+    # ======================================================================
+
+    def _get_aoai_client():
+        """
+        Create (and cache) the Azure OpenAI client using env vars.
+        """
+        if AzureOpenAI is None:
+            raise RuntimeError(
+                "openai package not installed. Add `openai` to requirements.txt"
+            )
+        api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+        if not api_key or not endpoint:
+            raise RuntimeError("Missing Azure OpenAI env vars.")
+        # cache on app
+        if not hasattr(app, "_aoai_client"):
+            app._aoai_client = AzureOpenAI(
+                api_key=api_key,
+                api_version=api_version,
+                azure_endpoint=endpoint
+            )
+        return app._aoai_client
+
+    def _inventory_snapshot(limit_items: int = 80) -> str:
+        rows = InventoryItem.query.order_by(InventoryItem.name.asc()).limit(limit_items).all()
+        lines = []
+        for r in rows:
+            qty = float(r.quantity or 0)
+            thr = float(r.low_stock_threshold or 0)
+            status = "LOW" if qty <= thr and thr > 0 else "OK"
+            lines.append(f"- {r.name}: {qty:g} {r.unit} (status: {status})")
+        return "\n".join(lines) if lines else "(no inventory items)"
+
+    def _menus_snapshot(limit_menus: int = 40) -> str:
+        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).limit(limit_menus).all()
+        out = []
+        for m in menus:
+            items = []
+            for ing in m.ingredients:
+                inv = InventoryItem.query.get(ing.inventory_id)
+                nm = inv.name if inv else "(deleted item)"
+                items.append(f"{ing.quantity:g} {inv.unit if inv else ''} {nm}".strip())
+            out.append(f"* {m.meal_type} – {m.title}: " + (", ".join(items) if items else "(no ingredients)"))
+        return "\n".join(out) if out else "(no menus built)"
+
+    def _planned_snapshot(days: int = 7) -> str:
+        today = date.today()
+        end = today + timedelta(days=days)
+        scheds = (MenuSchedule.query
+                  .filter(MenuSchedule.date >= today, MenuSchedule.date <= end)
+                  .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
+                  .all())
+        out = []
+        for s in scheds:
+            title = "(untitled)"
+            if getattr(s, "menu_id", None):
+                mm = Menu.query.get(s.menu_id)
+                if mm:
+                    title = mm.title
+            out.append(f"- {s.date:%Y-%m-%d} {s.meal_type}: {title}")
+        return "\n".join(out) if out else "(no upcoming schedules)"
+
+    def _assistant_system_prompt() -> str:
+        return (
+            "You are MealMind's Kitchen Assistant for a nursing-home kitchen. "
+            "Your job is to HELP with ideas and checks, not to replace the user. "
+            "When asked to plan menus, prefer items that are available in inventory. "
+            "If an ingredient is low/out, suggest substitutions and explicitly call it out. "
+            "When quantities or servings are missing, make a reasonable assumption and say so. "
+            "Never commit changes—only SUGGEST. The user makes final decisions."
+        )
+
+    @app.route("/assistant")
+    @login_required
+    def assistant():
+        """
+        A minimal chat UI that posts to /api/ai/chat.
+        Kept inline (no template file required) to keep this as a single-file drop-in.
+        """
+        return render_template_string(
+            """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MealMind • Kitchen Assistant</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f5f7fb;margin:0;}
+    header{background:#0a4ea3;color:#fff;padding:14px 18px;font-weight:700}
+    main{max-width:900px;margin:20px auto;padding:0 16px}
+    .card{background:#fff;border-radius:16px;box-shadow:0 8px 20px rgba(10,78,163,.08);padding:18px}
+    .row{display:flex;gap:10px;margin-top:10px}
+    textarea{width:100%;min-height:90px;padding:12px;border-radius:12px;border:1px solid #cbd5e1;outline:none}
+    button{background:#0a4ea3;border:none;color:#fff;padding:12px 16px;border-radius:12px;cursor:pointer}
+    button:disabled{opacity:.6}
+    .msg{white-space:pre-wrap;border-radius:12px;padding:12px;margin:10px 0}
+    .you{background:#eef2ff}
+    .bot{background:#f1f5f9}
+    .meta{color:#64748b;font-size:12px}
+  </style>
+</head>
+<body>
+<header>MealMind • Kitchen Assistant (AI)</header>
+<main>
+  <div class="card">
+    <div id="log"></div>
+    <div class="row">
+      <textarea id="txt" placeholder="Ask for menu ideas, substitutions, or checks..."></textarea>
+      <button id="send">Send</button>
+    </div>
+    <p class="meta">The assistant only suggests. You decide what to save/apply.</p>
+  </div>
+</main>
+<script>
+const log = document.getElementById('log');
+const txt = document.getElementById('txt');
+const btn = document.getElementById('send');
+function add(role, text){
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role==='you' ? 'you' : 'bot');
+  div.textContent = text;
+  log.appendChild(div);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+btn.onclick = async () => {
+  const msg = txt.value.trim();
+  if(!msg) return;
+  add('you', msg);
+  txt.value = ''; btn.disabled = true;
+  try{
+    const r = await fetch('/api/ai/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: msg})
+    });
+    const j = await r.json();
+    add('bot', j.reply || '(no reply)');
+  }catch(e){
+    add('bot', 'Error: ' + e.message);
+  }finally{
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
+            """
+        )
+
+    @app.route("/api/ai/chat", methods=["POST"])
+    @login_required
+    def ai_chat():
+        """
+        Accepts: { "message": "..." }
+        Returns: { "reply": "..." }
+        """
+        try:
+            data = request.get_json(silent=True) or {}
+            user_msg = (data.get("message") or "").strip()
+            if not user_msg:
+                return jsonify({"reply": "Please type a question or request."})
+
+            inv = _inventory_snapshot()
+            menus = _menus_snapshot()
+            planned = _planned_snapshot()
+
+            system = _assistant_system_prompt()
+            context = (
+                f"INVENTORY:\n{inv}\n\n"
+                f"BUILT MENUS:\n{menus}\n\n"
+                f"PLANNED (next 7 days):\n{planned}\n\n"
+                "When you suggest a menu, include a short shopping/low-stock note if relevant."
+            )
+
+            client = _get_aoai_client()
+            model = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o-mini")
+
+            # chat completions (non-streaming)
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": context},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0.4,
+                max_tokens=700,
+                top_p=0.95,
+            )
+            reply = (resp.choices[0].message.content if resp and resp.choices else "").strip()
+            if not reply:
+                reply = "I'm not sure. Try rephrasing or add details (meals, residents, servings)."
+
+            return jsonify({"reply": reply})
+        except Exception as e:
+            return jsonify({"reply": f"Assistant error: {e}"}), 200
+
+    # ======================================================================
+    # end Azure OpenAI integration
+    # ======================================================================
 
     return app
 
