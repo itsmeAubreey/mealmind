@@ -123,7 +123,7 @@ def dashboard_tiles_for(role: str):
         "Cook": cook,
         "Dietary Aide": aide,
     }
-    return mapping.get(role or "", aide)
+    return mapping.get(role or "", aide) 
 
 # -------------------------- app factory --------------------------
 def create_app():
