@@ -20,6 +20,7 @@ import base64
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
+from werkzeug.security import check_password_hash
 
 import pyotp
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -82,6 +83,22 @@ def model_has_column(model, name):
 
 def register_age_helper(app):
     app.jinja_env.globals["age"] = _calc_age
+
+def _verify_password(stored: str, provided: str) -> bool:
+    """
+    Accept either a werkzeug hash or a plain-text stored password.
+    This lets 'manager' continue to work even if DB has not been migrated.
+    """
+    if stored is None:
+        return False
+    # If it's a werkzeug hash, this will return True/False.
+    try:
+        if stored.startswith("pbkdf2:") or stored.startswith("scrypt:") or stored.startswith("argon2:"):
+            return check_password_hash(stored, provided)
+    except Exception:
+        pass
+    # Fallback: plain text equality
+    return stored == provided
 
 # ----- ensure MFA columns exist (for SQLite too) -----
 def ensure_user_table_has_mfa_columns():
@@ -251,7 +268,7 @@ def create_app():
                 or_(User.username.ilike(username), User.employee_id.ilike(username))
             ).first()
 
-            if user and user.check_password(password):
+            if user and _verify_password(getattr(user, "password", None), password):
                 # MFA gate if enabled
                 ensure_mfa_fields(user)
                 if user.mfa_enabled:
@@ -392,18 +409,22 @@ def create_app():
     def home():
         return redirect(url_for("dashboard") if "user" in session else url_for("login"))
 
-    @app.route("/dashboard")
+     @app.route("/dashboard")
     @login_required
     def dashboard():
-        role = session.get("user", {}).get("role")
-        # simple tiles list without AI link
+        user = session.get("user") or {}
+        role = user.get("role", "Dietary Aide")
+    
         tiles = [
             ("Residents", url_for("residents_list"), "purple"),
             ("Inventory", url_for("inventory_list"), "green"),
             ("Menu", url_for("menu_hub"), "blue"),
-            *([("Staff", url_for("staff_list"), "red")] if role == "Manager" else []),
         ]
+        if role == "Manager":
+            tiles.append(("Staff", url_for("staff_list"), "red"))
+    
         return render_template("dashboard.html", tiles=tiles)
+
 
     # ======================================================================
     # Residents
