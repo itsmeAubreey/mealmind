@@ -1277,6 +1277,65 @@ def create_app():
             suppress_global_flash=True
         )
 
+    # ---------- MealMind Assistant (dashboard popup) ----------
+    def _assistant_reply(text: str) -> str:
+        """Very small rule-based helper. Replace with real AI later."""
+        q = (text or "").strip().lower()
+        if not q:
+            return "Hi! Ask me about Residents, Inventory, Menu, Staff, or where things are in the app."
+    
+        # Simple keyword routing to helpful links in your app
+        if "resident" in q:
+            try:
+                return f"You can manage residents here: {url_for('residents_list', _external=False)}"
+            except Exception:
+                return "You can manage residents from the Residents tile on the dashboard."
+        if "inventory" in q or "stock" in q:
+            try:
+                return f"Inventory is here: {url_for('inventory_list', _external=False)}"
+            except Exception:
+                return "Open the Inventory tile to view and edit stock."
+        if "menu" in q or "meal" in q:
+            try:
+                return f"Menu tools are here: {url_for('menu_hub', _external=False)}"
+            except Exception:
+                return "Open the Menu tile to plan meals and schedules."
+        if "staff" in q or "employee" in q:
+            try:
+                return f"Staff management: {url_for('staff_list', _external=False)}"
+            except Exception:
+                return "Open the Staff tile to add or edit employees."
+        if "password" in q and "forgot" in q:
+            try:
+                return f"Use the reset page: {url_for('reset_request', _external=False)}"
+            except Exception:
+                return "Use the Forgot/Reset password page from the login screen."
+    
+        # MFA hints (since we discussed it)
+        if "mfa" in q or "authenticator" in q or "2fa" in q:
+            return "MFA is planned. For now, you can change your password from your profile or ask a manager to reset it."
+    
+        # Fallback
+        return ("I didn’t catch that. Try: 'Where is inventory?', 'How to add residents?', "
+                "'Open menu', or 'reset password'.")
+    
+    @app.post("/api/chat")
+    def api_chat():
+        """Minimal JSON chat endpoint for the dashboard widget."""
+        try:
+            # Only allow use if logged in
+            if not session.get("user"):
+                return jsonify({"ok": False, "error": "auth_required"}), 401
+    
+            data = request.get_json(silent=True) or {}
+            user_msg = data.get("message", "")
+            bot_msg = _assistant_reply(user_msg)
+            return jsonify({"ok": True, "reply": bot_msg})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+# ----------------------------------------------------------
+
+
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
