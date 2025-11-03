@@ -20,6 +20,7 @@ from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 from werkzeug.security import check_password_hash
+from authlib.integrations.flask_client import OAuth
 
 import pyotp
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -82,6 +83,15 @@ def model_has_column(model, name):
 
 def register_age_helper(app):
     app.jinja_env.globals["age"] = _calc_age
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
 
 # ---------- Password Reset + MFA helpers ----------
 def _reset_signer(secret_key: str):
@@ -198,8 +208,23 @@ def create_app():
         os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
     )
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
+    AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+    AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
+    AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
+    
+    oauth = OAuth(app)
+    auth0 = oauth.register(
+        "auth0",
+        client_id=AUTH0_CLIENT_ID,
+        client_secret=AUTH0_CLIENT_SECRET,
+        client_kwargs={"scope": "openid profile email"},
+        server_metadata_url=f"https://{AUTH0_DOMAIN}/.well-known/openid-configuration",
+    )
+
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
+
+    
 
     # --- THEN init DB and create tables ---
     db.init_app(app)
@@ -426,6 +451,31 @@ def create_app():
         # this is the important part: pass the user from session to the template
         user = session.get("user", {})
         return render_template("dashboard.html", user=user)
+
+    @app.route("/login")
+def login():
+    return auth0.authorize_redirect(
+        redirect_uri=url_for("callback", _external=True)
+    )
+
+@app.route("/callback")
+def callback():
+    token = auth0.authorize_access_token()
+    userinfo = token["userinfo"]
+    session["user"] = {
+        "name": userinfo.get("name"),
+        "email": userinfo.get("email"),
+        "sub": userinfo.get("sub"),
+    }
+    return redirect(url_for("dashboard"))  # or your main page
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(
+        f"https://{AUTH0_DOMAIN}/v2/logout?returnTo={url_for('index', _external=True)}&client_id={AUTH0_CLIENT_ID}"
+    )
+
 
 
 
