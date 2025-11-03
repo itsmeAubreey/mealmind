@@ -24,6 +24,7 @@ from werkzeug.security import check_password_hash
 
 import pyotp
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from urllib.parse import quote
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -62,6 +63,56 @@ def _parse_date(s):
         except ValueError:
             continue
     return None
+
+# ---------- Password Reset + MFA helpers ----------
+def _signer():
+    # Uses your app's SECRET_KEY
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="mealmind-reset")
+
+def generate_reset_token(user_id: int) -> str:
+    return _signer().dumps({"uid": user_id})
+
+def verify_reset_token(token: str, max_age=3600):  # 1 hour
+    try:
+        data = _signer().loads(token, max_age=max_age)
+        return data.get("uid")
+    except (BadSignature, SignatureExpired):
+        return None
+def ensure_mfa_columns():
+    """
+    Make sure the users table has an mfa_secret column.
+    Works on SQLite via a simple ALTER if missing.
+    """
+    table = User.__table__.name
+    insp = db.inspect(db.engine)
+    colnames = [c['name'] for c in insp.get_columns(table)]
+    if 'mfa_secret' not in colnames:
+        with db.engine.begin() as conn:
+            conn.execute(text(f'ALTER TABLE {table} ADD COLUMN mfa_secret TEXT'))
+
+def totp_from_secret(secret: str) -> pyotp.TOTP:
+    return pyotp.TOTP(secret) if secret else None
+
+
+def ensure_auth_columns():
+    """Add columns if missing (SQLite safe)."""
+    with db.engine.connect() as con:
+        # totp secret
+        try:
+            con.exec_driver_sql("ALTER TABLE user ADD COLUMN totp_secret VARCHAR(64)")
+        except Exception:
+            pass
+        # mfa enabled
+        try:
+            con.exec_driver_sql("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN")
+        except Exception:
+            pass
+
+# Call once at startup (after db.create_all())
+@app.before_first_request
+def _auth_bootstrap():
+    ensure_auth_columns()
+
 
 def _calc_age(bday):
     if not bday:
@@ -220,17 +271,34 @@ def create_app():
             return f(*a, **kw)
         return w
 
-    def _finalize_login(user):
+       def _finalize_login(user):
         session["user"] = {
             "id": user.id,
             "username": user.username,
             "role": user.role,
             "first_name": getattr(user, "first_name", "") or "",
             "last_name": getattr(user, "last_name", "") or "",
+            # --- MFA/session extras ---
+            "mfa_enabled": bool(getattr(user, "mfa_secret", None)),
+            "mfa_verified": False,   # will flip True after successful MFA verify
+            "must_change_password": bool(getattr(user, "must_change_password", False)),
         }
-
+    
     def login_user(user):
         _finalize_login(user)
+    
+        # Force password change first
+        if session["user"].get("must_change_password"):
+            return redirect(url_for("change_password"))
+    
+        # If MFA is enabled and not yet verified in this session, go verify
+        if session["user"].get("mfa_enabled") and not session["user"].get("mfa_verified"):
+            return redirect(url_for("mfa_verify"))
+    
+        # Otherwise go to dashboard
+        return redirect(url_for("dashboard"))
+
+
 
     def current_role():
         return session.get("user", {}).get("role")
