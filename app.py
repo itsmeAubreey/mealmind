@@ -30,7 +30,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     session, send_file, flash, jsonify
 )
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, inspect, text
 
 # Optional .env for local dev
 try:
@@ -78,17 +78,23 @@ def verify_reset_token(token: str, max_age=3600):  # 1 hour
         return data.get("uid")
     except (BadSignature, SignatureExpired):
         return None
-def ensure_mfa_columns():
-    """
-    Make sure the users table has an mfa_secret column.
-    Works on SQLite via a simple ALTER if missing.
-    """
-    table = User.__table__.name
-    insp = db.inspect(db.engine)
-    colnames = [c['name'] for c in insp.get_columns(table)]
-    if 'mfa_secret' not in colnames:
-        with db.engine.begin() as conn:
-            conn.execute(text(f'ALTER TABLE {table} ADD COLUMN mfa_secret TEXT'))
+def _ensure_user_columns(app, db):
+    """Create missing MFA columns safely if they don't exist."""
+    with app.app_context():
+        insp = inspect(db.engine)
+        cols = {c['name'] for c in insp.get_columns('user')}
+
+        stmts = []
+        if 'mfa_enabled' not in cols:
+            # SQLite stores BOOLEAN as INTEGER (0/1); DEFAULT 0 is fine
+            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0"))
+        if 'mfa_secret' not in cols:
+            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(32)"))
+
+        if stmts:
+            with db.engine.begin() as conn:
+                for s in stmts:
+                    conn.execute(s)
 
 def totp_from_secret(secret: str) -> pyotp.TOTP:
     return pyotp.TOTP(secret) if secret else None
@@ -229,6 +235,15 @@ def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
 # ----------------------- app factory -----------------------
 def create_app():
     app = Flask(__name__)
+    # ... app.config[...] ...
+    db.init_app(app)
+    
+    with app.app_context():
+        db.create_all()
+    
+    _ensure_user_columns(app, db)   # <-- add this line AFTER create_all()
+
+   
 
     # Config
     instance_dir = os.path.join(os.getcwd(), "instance")
