@@ -1,6 +1,6 @@
 # app.py — MealMind / Flask app (fixed)
 # - Residents, Inventory, Menu (legacy + builder + scheduler + planned), Staff
-# - Forgot password + simple MFA (TOTP) without Entra ID
+# - Forgot password + simple MFA (TOTP)
 #
 # Required App Service settings:
 #   SECRET_KEY
@@ -16,7 +16,6 @@
 import os
 import io
 import csv
-import base64
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
@@ -24,7 +23,6 @@ from werkzeug.security import check_password_hash
 
 import pyotp
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-from urllib.parse import quote
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -64,62 +62,6 @@ def _parse_date(s):
             continue
     return None
 
-# ---------- Password Reset + MFA helpers ----------
-def _signer():
-    # Uses your app's SECRET_KEY
-    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="mealmind-reset")
-
-def generate_reset_token(user_id: int) -> str:
-    return _signer().dumps({"uid": user_id})
-
-def verify_reset_token(token: str, max_age=3600):  # 1 hour
-    try:
-        data = _signer().loads(token, max_age=max_age)
-        return data.get("uid")
-    except (BadSignature, SignatureExpired):
-        return None
-def _ensure_user_columns(app, db):
-    """Create missing MFA columns safely if they don't exist."""
-    with app.app_context():
-        insp = inspect(db.engine)
-        cols = {c['name'] for c in insp.get_columns('user')}
-
-        stmts = []
-        if 'mfa_enabled' not in cols:
-            # SQLite stores BOOLEAN as INTEGER (0/1); DEFAULT 0 is fine
-            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0"))
-        if 'mfa_secret' not in cols:
-            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(32)"))
-
-        if stmts:
-            with db.engine.begin() as conn:
-                for s in stmts:
-                    conn.execute(s)
-
-def totp_from_secret(secret: str) -> pyotp.TOTP:
-    return pyotp.TOTP(secret) if secret else None
-
-
-def ensure_auth_columns():
-    """Add columns if missing (SQLite safe)."""
-    with db.engine.connect() as con:
-        # totp secret
-        try:
-            con.exec_driver_sql("ALTER TABLE user ADD COLUMN totp_secret VARCHAR(64)")
-        except Exception:
-            pass
-        # mfa enabled
-        try:
-            con.exec_driver_sql("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN")
-        except Exception:
-            pass
-
-# Call once at startup (after db.create_all())
-@app.before_first_request
-def _auth_bootstrap():
-    ensure_auth_columns()
-
-
 def _calc_age(bday):
     if not bday:
         return None
@@ -141,6 +83,16 @@ def model_has_column(model, name):
 def register_age_helper(app):
     app.jinja_env.globals["age"] = _calc_age
 
+# ---------- Password Reset + MFA helpers ----------
+def _reset_signer(secret_key: str):
+    return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
+
+def make_reset_token(secret_key: str, user_id: int, email: str) -> str:
+    return _reset_signer(secret_key).dumps({"uid": user_id, "email": email})
+
+def load_reset_token(secret_key: str, token: str, max_age_sec: int = 1800):
+    return _reset_signer(secret_key).loads(token, max_age=max_age_sec)
+
 def _verify_password(stored: str, provided: str) -> bool:
     """
     Accept either a werkzeug hash or a plain-text stored password.
@@ -148,36 +100,22 @@ def _verify_password(stored: str, provided: str) -> bool:
     """
     if stored is None:
         return False
-    # If it's a werkzeug hash, this will return True/False.
     try:
-        if stored.startswith("pbkdf2:") or stored.startswith("scrypt:") or stored.startswith("argon2:"):
+        if stored.startswith(("pbkdf2:", "scrypt:", "argon2:")):
             return check_password_hash(stored, provided)
     except Exception:
         pass
-    # Fallback: plain text equality
     return stored == provided
 
-# ----- ensure MFA columns exist (for SQLite too) -----
-def ensure_user_table_has_mfa_columns():
-    try:
-        insp = db.inspect(db.engine)
-        if "user" not in insp.get_table_names():
-            return
-        cols = {c["name"] for c in insp.get_columns("user")}
-        stmts = []
-        if "mfa_enabled" not in cols:
-            stmts.append('ALTER TABLE "user" ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0')
-        if "mfa_secret" not in cols:
-            stmts.append('ALTER TABLE "user" ADD COLUMN mfa_secret VARCHAR(64)')
-        if stmts:
-            from sqlalchemy import text
-            with db.engine.begin() as conn:
-                for s in stmts:
-                    conn.execute(text(s))
-    except Exception as e:
-        print("MFA column check failed:", e)
+def totp_from_secret(secret: str) -> pyotp.TOTP | None:
+    return pyotp.TOTP(secret) if secret else None
 
-# ----- Email (logs if SMTP not configured) -----
+def make_new_mfa_secret() -> str:
+    return pyotp.random_base32()
+
+def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
+    return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer)
+
 def send_email(to_addr: str, subject: str, body: str):
     import smtplib
     host = os.getenv("SMTP_HOST")
@@ -206,46 +144,45 @@ def send_email(to_addr: str, subject: str, body: str):
             s.login(user, pwd)
         s.send_message(msg)
 
-# ----- Reset token -----
-def _reset_signer(secret_key: str):
-    return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
+# ----- safe column add helpers -----
+def _ensure_user_columns(app, db_):
+    """Create missing MFA columns safely if they don't exist."""
+    with app.app_context():
+        insp = inspect(db_.engine)
+        if "user" not in insp.get_table_names():
+            return
+        cols = {c['name'] for c in insp.get_columns('user')}
+        stmts = []
+        if 'mfa_enabled' not in cols:
+            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0"))
+        if 'mfa_secret' not in cols:
+            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(32)"))
+        if stmts:
+            with db_.engine.begin() as conn:
+                for s in stmts:
+                    conn.execute(s)
 
-def make_reset_token(secret_key: str, user_id: int, email: str) -> str:
-    return _reset_signer(secret_key).dumps({"uid": user_id, "email": email})
-
-def load_reset_token(secret_key: str, token: str, max_age_sec: int = 1800):
-    return _reset_signer(secret_key).loads(token, max_age=max_age_sec)
-
-# ----- MFA helpers -----
-def ensure_mfa_fields(user):
-    if not hasattr(user, "mfa_enabled"):
-        user.mfa_enabled = False
-    if not hasattr(user, "mfa_secret") or not user.mfa_secret:
-        user.mfa_secret = None
-
-def make_new_mfa_secret() -> str:
-    return pyotp.random_base32()
-
-def totp_from_secret(secret: str):
-    return pyotp.TOTP(secret)
-
-def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
-    return totp_from_secret(secret).provisioning_uri(name=username, issuer_name=issuer)
+# (optional) compatibility columns used by earlier drafts
+def _ensure_legacy_auth_columns(app, db_):
+    with app.app_context():
+        try:
+            with db_.engine.begin() as con:
+                try:
+                    con.exec_driver_sql("ALTER TABLE user ADD COLUMN totp_secret VARCHAR(64)")
+                except Exception:
+                    pass
+                try:
+                    con.exec_driver_sql("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 # ----------------------- app factory -----------------------
 def create_app():
     app = Flask(__name__)
-    # ... app.config[...] ...
-    db.init_app(app)
-    
-    with app.app_context():
-        db.create_all()
-    
-    _ensure_user_columns(app, db)   # <-- add this line AFTER create_all()
 
-   
-
-    # Config
+    # --- Configure FIRST ---
     instance_dir = os.path.join(os.getcwd(), "instance")
     os.makedirs(instance_dir, exist_ok=True)
     local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
@@ -264,7 +201,13 @@ def create_app():
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
 
+    # --- THEN init DB and create tables ---
     db.init_app(app)
+    with app.app_context():
+        db.create_all()
+        _ensure_user_columns(app, db)         # add mfa_secret, mfa_enabled
+        _ensure_legacy_auth_columns(app, db)  # tolerate older drafts
+
     register_age_helper(app)
 
     INVENTORY_UNITS = [
@@ -278,7 +221,6 @@ def create_app():
         return {"current_user": session.get("user")}
 
     # ---------- guards ----------
-    # ---------- guards ----------
     def login_required(f):
         @wraps(f)
         def w(*a, **kw):
@@ -286,8 +228,7 @@ def create_app():
                 return redirect(url_for("login"))
             return f(*a, **kw)
         return w
-    
-    
+
     # ---------- session helpers ----------
     def _finalize_login(user):
         session["user"] = {
@@ -296,31 +237,22 @@ def create_app():
             "role": user.role,
             "first_name": getattr(user, "first_name", "") or "",
             "last_name": getattr(user, "last_name", "") or "",
-            # --- MFA/session extras ---
             "mfa_enabled": bool(getattr(user, "mfa_secret", None)),
-            "mfa_verified": False,  # flip to True after successful verify
+            "mfa_verified": False,
             "must_change_password": bool(getattr(user, "must_change_password", False)),
         }
-    
+
     def login_user(user):
         _finalize_login(user)
-    
-        # Force password change first
         if session["user"].get("must_change_password"):
             return redirect(url_for("change_password"))
-    
-        # If MFA is enabled and not yet verified in this session, go verify
         if session["user"].get("mfa_enabled") and not session["user"].get("mfa_verified"):
             return redirect(url_for("mfa_verify"))
-    
-        # Otherwise go to dashboard
         return redirect(url_for("dashboard"))
-    
-    
+
     def current_role():
         return session.get("user", {}).get("role")
-    
-    
+
     def roles_required(*roles):
         def decorate(f):
             @wraps(f)
@@ -333,8 +265,6 @@ def create_app():
             return wrapped
         return decorate
 
-
-    
     @app.before_request
     def enforce_pw_change():
         allowed = {"login", "logout", "change_password", "static", "healthz", "forgot_password", "reset_password"}
@@ -358,16 +288,11 @@ def create_app():
 
             if user and _verify_password(getattr(user, "password", None), password):
                 # MFA gate if enabled
-                ensure_mfa_fields(user)
-                if user.mfa_enabled:
+                if getattr(user, "mfa_secret", None):
                     session["pre_2fa_uid"] = user.id
                     return redirect(url_for("mfa_verify"))
-
                 # normal login
-                login_user(user)
-                if getattr(user, "must_change_password", False):
-                    return redirect(url_for("change_password"))
-                return redirect(url_for("dashboard"))
+                return login_user(user)
 
             flash("Invalid credentials.", "error")
         return render_template("login.html")
@@ -378,10 +303,9 @@ def create_app():
         return redirect(url_for("login"))
 
     @app.route("/change-password", methods=["GET", "POST"])
+    @login_required
     def change_password():
         uinfo = session.get("user")
-        if not uinfo:
-            return redirect(url_for("login"))
         user = User.query.get_or_404(uinfo["id"])
         error = None
         if request.method == "POST":
@@ -452,10 +376,8 @@ def create_app():
     @app.route("/mfa/setup", methods=["GET", "POST"])
     @login_required
     def mfa_setup():
-        # only the logged-in user can set up their MFA
         user = User.query.get(session["user"]["id"])
-        ensure_mfa_fields(user)
-        if not user.mfa_secret:
+        if not getattr(user, "mfa_secret", None):
             user.mfa_secret = make_new_mfa_secret()
             db.session.commit()
 
@@ -486,8 +408,7 @@ def create_app():
             code = (request.form.get("code") or "").strip()
             if user.mfa_secret and totp_from_secret(user.mfa_secret).verify(code, valid_window=1):
                 session.pop("pre_2fa_uid", None)
-                login_user(user)
-                return redirect(url_for("dashboard"))
+                return login_user(user)
             flash("Invalid code.", "error")
 
         return render_template("mfa_verify.html")
@@ -500,26 +421,15 @@ def create_app():
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        # read the logged-in role safely
         role = session.get("user", {}).get("role")
-    
-        # Each tile is a 4-tuple: (label, href, color, hint)
-        # `dashboard.html` expects 4 values: label, href, color, hint
         tiles = [
             ("Residents",  url_for("residents_list"),  "purple", "View & print"),
             ("Inventory",  url_for("inventory_list"),  "green",  "Stock & export"),
             ("Menu",       url_for("menu_hub"),        "blue",   "Plan & apply"),
         ]
-    
-        # Only managers see the Staff tile
         if role == "Manager":
             tiles.append(("Staff", url_for("staff_list"), "red", "Manage accounts"))
-    
-        # Render the page
         return render_template("dashboard.html", tiles=tiles)
-
-
-
 
     # ======================================================================
     # Residents
@@ -685,7 +595,7 @@ def create_app():
                 User.email.ilike(like),
             ))
         users = query.order_by(User.last_name, User.first_name, User.username).all()
-        return render_template("staff_list.html", users=users, roles=ROLES, role_filter=role_filter, q=q)
+        return render_template("staff_list.html", users=users, roles=["Manager","Cook","Dietitian","Dietary Aide"], role_filter=role_filter, q=q)
 
     @app.route("/staff/new", methods=["GET", "POST"])
     @login_required
@@ -713,7 +623,7 @@ def create_app():
                 errors.append("Username or Employee ID already exists.")
 
             if errors:
-                return render_template("staff_form.html", mode="new", values=request.form, roles=ROLES, errors=errors)
+                return render_template("staff_form.html", mode="new", values=request.form, roles=["Manager","Cook","Dietitian","Dietary Aide"], errors=errors)
 
             u = User(
                 first_name=first_name, last_name=last_name, username=username,
@@ -724,7 +634,7 @@ def create_app():
             db.session.commit()
             return redirect(url_for("staff_list"))
 
-        return render_template("staff_form.html", mode="new", values={}, roles=ROLES)
+        return render_template("staff_form.html", mode="new", values={}, roles=["Manager","Cook","Dietitian","Dietary Aide"])
 
     @app.route("/staff/<int:uid>/edit", methods=["GET", "POST"])
     @login_required
@@ -753,7 +663,7 @@ def create_app():
                 errors.append("Another user already has that username or employee ID.")
 
             if errors:
-                return render_template("staff_form.html", mode="edit", values=request.form, roles=ROLES, errors=errors, user_id=u.id)
+                return render_template("staff_form.html", mode="edit", values=request.form, roles=["Manager","Cook","Dietitian","Dietary Aide"], errors=errors, user_id=u.id)
 
             u.first_name  = first_name
             u.last_name   = last_name
@@ -772,7 +682,7 @@ def create_app():
             "email":       u.email       or "",
             "role":        u.role        or "Dietary Aide",
         }
-        return render_template("staff_form.html", mode="edit", values=values, roles=ROLES, user_id=u.id)
+        return render_template("staff_form.html", mode="edit", values=values, roles=["Manager","Cook","Dietitian","Dietary Aide"], user_id=u.id)
 
     @app.route("/staff/<int:uid>/delete", methods=["POST"])
     @login_required
@@ -933,10 +843,11 @@ def create_app():
             status_label = "LOW" if qty <= thr else "OK"
             w.writerow([it.name, it.unit, qty, thr, status_label])
 
+        from flask import send_file as _send_file
         mem = io.BytesIO(out.getvalue().encode("utf-8-sig"))
         mem.seek(0)
         filename = f"inventory_{status or 'all'}.csv"
-        return send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
+        return _send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
 
     # ======================================================================
     # Legacy One-Day Menu  → /menu/legacy (kept for continuity)
@@ -1292,14 +1203,11 @@ def create_app():
             suppress_global_flash=True
         )
 
-    # ---------- MealMind Assistant (dashboard popup) ----------
+    # ---------- Minimal “assistant” chat endpoint ----------
     def _assistant_reply(text: str) -> str:
-        """Very small rule-based helper. Replace with real AI later."""
         q = (text or "").strip().lower()
         if not q:
             return "Hi! Ask me about Residents, Inventory, Menu, Staff, or where things are in the app."
-    
-        # Simple keyword routing to helpful links in your app
         if "resident" in q:
             try:
                 return f"You can manage residents here: {url_for('residents_list', _external=False)}"
@@ -1322,34 +1230,22 @@ def create_app():
                 return "Open the Staff tile to add or edit employees."
         if "password" in q and "forgot" in q:
             try:
-                return f"Use the reset page: {url_for('reset_request', _external=False)}"
+                return f"Use the reset page: {url_for('forgot_password', _external=False)}"
             except Exception:
                 return "Use the Forgot/Reset password page from the login screen."
-    
-        # MFA hints (since we discussed it)
         if "mfa" in q or "authenticator" in q or "2fa" in q:
-            return "MFA is planned. For now, you can change your password from your profile or ask a manager to reset it."
-    
-        # Fallback
+            return "MFA is available from your profile: open Menu → your profile → MFA setup."
         return ("I didn’t catch that. Try: 'Where is inventory?', 'How to add residents?', "
                 "'Open menu', or 'reset password'.")
-    
+
     @app.post("/api/chat")
     def api_chat():
-        """Minimal JSON chat endpoint for the dashboard widget."""
-        try:
-            # Only allow use if logged in
-            if not session.get("user"):
-                return jsonify({"ok": False, "error": "auth_required"}), 401
-    
-            data = request.get_json(silent=True) or {}
-            user_msg = data.get("message", "")
-            bot_msg = _assistant_reply(user_msg)
-            return jsonify({"ok": True, "reply": bot_msg})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-# ----------------------------------------------------------
-
+        if not session.get("user"):
+            return jsonify({"ok": False, "error": "auth_required"}), 401
+        data = request.get_json(silent=True) or {}
+        user_msg = data.get("message", "")
+        bot_msg = _assistant_reply(user_msg)
+        return jsonify({"ok": True, "reply": bot_msg})
 
     @app.route("/menu/planned")
     @login_required
@@ -1458,7 +1354,6 @@ def create_app():
 
         return render_template("planned_menu_view.html", day_value=d, blocks=detail)
 
-    # ---------- done ----------
     return app
 
 
@@ -1466,7 +1361,7 @@ def create_app():
 app = create_app()
 with app.app_context():
     db.create_all()
-    ensure_user_table_has_mfa_columns()
+    # ensure seed user exists
     if not User.query.first():
         mgr = User(
             first_name="",
@@ -1489,7 +1384,6 @@ with app.app_context():
 def healthz():
     return "ok", 200
 
-# ------------- dev entry -------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")),
             debug=os.getenv("FLASK_DEBUG", "0") == "1")
