@@ -226,5 +226,102 @@
       </a>
     </div>
   </main>
+
+  <!-- MealMind assistant widget -->
+<button id="mm-chat-btn" title="Chat with MealMind">
+  💬
+</button>
+
+<div id="mm-chat-panel">
+  <div class="mm-chat-header">
+    <span>MealMind Assistant</span>
+    <button id="mm-chat-close">✕</button>
+  </div>
+  <iframe src="{{ url_for('assistant') }}" class="mm-chat-frame"></iframe>
+</div>
+
+<style>
+  #mm-chat-btn {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: 58px;
+    height: 58px;
+    border-radius: 9999px;
+    border: none;
+    background: linear-gradient(160deg,#0f6fff 0%, #0cc5a7 100%);
+    color: #fff;
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    cursor: pointer;
+    z-index: 9999;
+  }
+
+  #mm-chat-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 92px;
+    width: 380px;
+    height: 520px;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(15, 111, 255, 0.25);
+    overflow: hidden;
+    display: none;
+    z-index: 10000;
+  }
+
+  .mm-chat-header {
+    background: #0f6fff;
+    color: #fff;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .mm-chat-header button {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .mm-chat-frame {
+    border: none;
+    width: 100%;
+    height: calc(100% - 44px);
+  }
+
+  @media (max-width: 640px) {
+    #mm-chat-panel {
+      right: 12px;
+      width: calc(100% - 24px);
+      height: 65vh;
+    }
+  }
+</style>
+
+<script>
+  const btn = document.getElementById('mm-chat-btn');
+  const panel = document.getElementById('mm-chat-panel');
+  const closeBtn = document.getElementById('mm-chat-close');
+
+  btn.addEventListener('click', () => {
+    panel.style.display = 'block';
+  });
+
+  closeBtn.addEventListener('click', () => {
+    panel.style.display = 'none';
+  });
+</script>
+
 </body>
 </html>
