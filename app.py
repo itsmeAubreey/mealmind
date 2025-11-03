@@ -415,22 +415,20 @@ def create_app():
         return render_template("mfa_verify.html")
 
     # ---------- home / dashboard ----------
+# ---------- home / dashboard ----------
     @app.route("/")
     def home():
-        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
-
+        if "user" in session:
+            return redirect(url_for("dashboard"))
+        return redirect(url_for("login"))
+    
+    
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        role = session.get("user", {}).get("role")
-        tiles = [
-            ("Residents",  url_for("residents_list"),  "purple", "View & print"),
-            ("Inventory",  url_for("inventory_list"),  "green",  "Stock & export"),
-            ("Menu",       url_for("menu_hub"),        "blue",   "Plan & apply"),
-        ]
-        if role == "Manager":
-            tiles.append(("Staff", url_for("staff_list"), "red", "Manage accounts"))
-        return render_template("dashboard.html", tiles=tiles)
+        user = session.get("user", {})
+        return render_template("dashboard.html", user=user)
+
 
     # ======================================================================
     # Residents
