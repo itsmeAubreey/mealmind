@@ -1,35 +1,107 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}MealMind{% endblock %}</title>
-  <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@1.5.10/css/pico.min.css">
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Inter font (clean UI like in your screenshot) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
   <style>
-    header { padding: .8rem 1rem; display:flex; justify-content:space-between; align-items:center; }
-    header a.brand { font-weight:700; text-decoration:none; }
-    main { padding: 1rem; }
-    .btn { padding:.55rem 1rem; border-radius:.6rem }
+    :root{
+      --mm-blue:#0B5BD3;
+      --mm-bg:#0f172a;           /* dark slate bg */
+      --mm-card: #111827;        /* dark card */
+      --mm-text:#e5e7eb;         /* light text */
+      --mm-muted:#94a3b8;        /* muted text */
+      --mm-purple:#7c3aed;       /* Residents */
+      --mm-green:#10b981;        /* Inventory */
+      --mm-bluegrad1:#2563eb;    /* Menu */
+      --mm-bluegrad2:#3b82f6;
+      --mm-red:#ef4444;          /* Staff */
+    }
+    html, body{
+      height:100%;
+      background: var(--mm-bg);
+      color: var(--mm-text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+    }
+    .mm-topbar{
+      background: var(--mm-blue);
+      color:#fff;
+      box-shadow: 0 1px 0 rgba(255,255,255,.05), inset 0 -1px 0 rgba(0,0,0,.15);
+    }
+    .mm-brand{
+      display:flex; gap:.6rem; align-items:center; font-weight:800; letter-spacing:.2px; font-size:1.25rem;
+    }
+    .mm-brand-badge{ width:28px; height:28px; border-radius:8px; background:#1e40af; display:grid; place-items:center; font-weight:800; }
+    .mm-container{ max-width:1100px; } /* keeps inner pages from feeling huge */
+    a, a:visited{ color:#c7d2fe; }
+    a:hover{ color:#fff; }
+
+    /* Dashboard tiles */
+    .mm-tile{
+      border-radius:20px; padding:26px; min-width:260px; min-height:150px;
+      background:var(--mm-card); border:1px solid rgba(255,255,255,.06);
+      box-shadow: 0 6px 24px rgba(0,0,0,.25);
+      transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+      color:#fff; text-decoration:none; display:block;
+    }
+    .mm-tile:hover{ transform: translateY(-2px); filter:brightness(1.05); box-shadow:0 10px 30px rgba(0,0,0,.35); }
+    .mm-tile h3{ font-weight:800; margin:12px 0 6px; }
+    .mm-caption{ color:var(--mm-muted); font-size:.95rem; }
+
+    .mm-tile.purple{ background:linear-gradient(135deg, #6d28d9, var(--mm-purple)); }
+    .mm-tile.green{ background:linear-gradient(135deg, #059669, var(--mm-green)); }
+    .mm-tile.blue{  background:linear-gradient(135deg, var(--mm-bluegrad1), var(--mm-bluegrad2)); }
+    .mm-tile.red{   background:linear-gradient(135deg, #dc2626, var(--mm-red)); }
+
+    .mm-section-title{ font-size:2.4rem; font-weight:800; margin-bottom:22px; }
+    .form-control, .form-select{ background:#0b1220; color:#e5e7eb; border-color:#1f2937; }
+    .form-control:focus, .form-select:focus{ background:#0b1220; color:#fff; border-color:#4f46e5; box-shadow:0 0 0 .15rem rgba(79,70,229,.25); }
+    .table{ color:#d1d5db; }
+    .table thead th{ color:#93c5fd; border-color:#1f2937; }
+    .table td, .table th{ border-color:#1f2937; }
+    .btn-primary{ background:#2563eb; border-color:#2563eb; }
+    .btn-primary:hover{ background:#1d4ed8; border-color:#1d4ed8; }
+    .btn-outline-light{ border-color:rgba(255,255,255,.6); color:#fff; }
   </style>
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
-  <header>
-    <a class="brand" href="{{ url_for('dashboard') }}">MealMind</a>
-    {% if session.get('user') %}
-      <nav><a class="btn" href="{{ url_for('logout') }}">Logout</a></nav>
-    {% endif %}
-  </header>
-  <main>
+  <!-- TOP BAR -->
+  <div class="mm-topbar py-3">
+    <div class="container mm-container d-flex align-items-center justify-content-between">
+      <div class="mm-brand">
+        <div class="mm-brand-badge">M</div>
+        <span>MealMind</span>
+      </div>
+      {% if session.get('user_id') %}
+        <a class="btn btn-outline-light btn-sm" href="{{ url_for('logout') }}">↪ Logout</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <main class="container mm-container py-4">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <div>
-          {% for category, message in messages %}
-            <article class="{{ 'secondary' if category=='error' else 'primary' }}">{{ message }}</article>
-          {% endfor %}
-        </div>
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'danger' if category=='error' else category }} mb-3">{{ message }}</div>
+        {% endfor %}
       {% endif %}
     {% endwith %}
+
     {% block content %}{% endblock %}
   </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  {% block body_extra %}{% endblock %}
 </body>
 </html>
