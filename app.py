@@ -415,19 +415,18 @@ def create_app():
         return render_template("mfa_verify.html")
 
     # ---------- home / dashboard ----------
-# ---------- home / dashboard ----------
     @app.route("/")
     def home():
-        if "user" in session:
-            return redirect(url_for("dashboard"))
-        return redirect(url_for("login"))
-    
+        # send logged-in users straight to dashboard
+        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
     
     @app.route("/dashboard")
     @login_required
     def dashboard():
+        # this is the important part: pass the user from session to the template
         user = session.get("user", {})
         return render_template("dashboard.html", user=user)
+
 
 
     # ======================================================================
