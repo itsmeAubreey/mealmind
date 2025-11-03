@@ -263,6 +263,7 @@ def create_app():
         return {"current_user": session.get("user")}
 
     # ---------- guards ----------
+    # ---------- guards ----------
     def login_required(f):
         @wraps(f)
         def w(*a, **kw):
@@ -270,8 +271,10 @@ def create_app():
                 return redirect(url_for("login"))
             return f(*a, **kw)
         return w
-
-       def _finalize_login(user):
+    
+    
+    # ---------- session helpers ----------
+    def _finalize_login(user):
         session["user"] = {
             "id": user.id,
             "username": user.username,
@@ -280,7 +283,7 @@ def create_app():
             "last_name": getattr(user, "last_name", "") or "",
             # --- MFA/session extras ---
             "mfa_enabled": bool(getattr(user, "mfa_secret", None)),
-            "mfa_verified": False,   # will flip True after successful MFA verify
+            "mfa_verified": False,  # flip to True after successful verify
             "must_change_password": bool(getattr(user, "must_change_password", False)),
         }
     
@@ -297,12 +300,12 @@ def create_app():
     
         # Otherwise go to dashboard
         return redirect(url_for("dashboard"))
-
-
-
+    
+    
     def current_role():
         return session.get("user", {}).get("role")
-
+    
+    
     def roles_required(*roles):
         def decorate(f):
             @wraps(f)
@@ -315,6 +318,8 @@ def create_app():
             return wrapped
         return decorate
 
+
+    
     @app.before_request
     def enforce_pw_change():
         allowed = {"login", "logout", "change_password", "static", "healthz", "forgot_password", "reset_password"}
