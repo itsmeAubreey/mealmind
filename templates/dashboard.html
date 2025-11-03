@@ -7,12 +7,8 @@
   <style>
     :root {
       --blue: #065fd4;
-      --bg: #edf1f7;
-      --card-radius: 18px;
     }
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -28,7 +24,6 @@
       align-items: center;
       justify-content: space-between;
       padding: 0 1.5rem;
-      border-bottom: 1px solid rgba(0,0,0,.05);
     }
     .brand {
       display: flex;
@@ -51,7 +46,6 @@
     .brand-title {
       font-weight: 600;
       font-size: 1.3rem;
-      letter-spacing: .01em;
     }
     .logout-btn {
       background: rgba(255,255,255,.15);
@@ -70,9 +64,7 @@
       margin: 1.4rem auto 2.5rem;
       padding: 0 1.5rem;
     }
-    .welcome-block {
-      margin-bottom: 1.4rem;
-    }
+    .welcome-block { margin-bottom: 1.4rem; }
     .welcome-title {
       font-size: 1.45rem;
       font-weight: 600;
@@ -89,7 +81,7 @@
     }
     .tile {
       border-radius: 22px;
-      padding: 1.1rem 1.05rem 1.1rem 1.05rem;
+      padding: 1.1rem 1.05rem;
       color: #fff;
       text-decoration: none;
       display: flex;
@@ -98,15 +90,6 @@
       box-shadow: 0 18px 25px rgba(0,0,0,.12);
       position: relative;
       overflow: hidden;
-    }
-    .tile-badge {
-      background: rgba(255,255,255,.15);
-      border: 1px solid rgba(255,255,255,.18);
-      border-radius: 9999px;
-      padding: .3rem .75rem;
-      font-size: .68rem;
-      width: fit-content;
-      margin-bottom: .75rem;
     }
     .tile-title {
       font-size: 1.2rem;
@@ -131,19 +114,11 @@
       line-height: 1.4;
       opacity: .94;
     }
-    .tile.residents {
-      background: linear-gradient(140deg, #7a58ff 0%, #7f35dd 100%);
-    }
-    .tile.inventory {
-      background: linear-gradient(140deg, #13b36b 0%, #0a8f55 100%);
-    }
-    .tile.menu {
-      background: linear-gradient(140deg, #3b82f6 0%, #175cd3 100%);
-    }
-    .tile.staff {
-      background: linear-gradient(140deg, #e63964 0%, #c91b44 100%);
-    }
-    /* little wave in the corner */
+    .tile.residents  { background: linear-gradient(140deg, #7a58ff 0%, #7f35dd 100%); }
+    .tile.inventory  { background: linear-gradient(140deg, #13b36b 0%, #0a8f55 100%); }
+    .tile.menu       { background: linear-gradient(140deg, #3b82f6 0%, #175cd3 100%); }
+    .tile.staff      { background: linear-gradient(140deg, #e63964 0%, #c91b44 100%); }
+
     .tile::after {
       content: "";
       position: absolute;
@@ -153,8 +128,8 @@
       height: 140px;
       background: rgba(255,255,255,.12);
       border-radius: 9999px;
-      filter: blur(0);
     }
+
     @media (max-width: 670px) {
       .topbar {
         flex-wrap: wrap;
@@ -162,15 +137,76 @@
         height: auto;
         padding: .75rem 1rem;
       }
-      .main {
-        margin-top: 1rem;
+      .main { margin-top: 1rem; }
+    }
+
+    /* chat widget */
+    #mm-chat-btn {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      width: 58px;
+      height: 58px;
+      border-radius: 9999px;
+      border: none;
+      background: linear-gradient(160deg,#0f6fff 0%, #0cc5a7 100%);
+      color: #fff;
+      font-size: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      cursor: pointer;
+      z-index: 9999;
+    }
+    #mm-chat-panel {
+      position: fixed;
+      right: 24px;
+      bottom: 92px;
+      width: 380px;
+      height: 520px;
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 16px 40px rgba(15, 111, 255, 0.25);
+      overflow: hidden;
+      display: none;
+      z-index: 10000;
+    }
+    .mm-chat-header {
+      background: #0f6fff;
+      color: #fff;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .mm-chat-header button {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .mm-chat-frame {
+      border: none;
+      width: 100%;
+      height: calc(100% - 44px);
+    }
+    @media (max-width: 640px) {
+      #mm-chat-panel {
+        right: 12px;
+        width: calc(100% - 24px);
+        height: 65vh;
       }
     }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <!-- make MealMind clickable to dashboard -->
+    <!-- click to go back to dashboard -->
     <a class="brand" href="{{ url_for('dashboard') }}">
       <span class="brand-badge">M</span>
       <span class="brand-title">MealMind</span>
@@ -182,15 +218,13 @@
     <div class="welcome-block">
       <div class="welcome-title">
         Welcome,
-        {{ (user.first_name or user.username) }}
-        {% if user.last_name %} {{ user.last_name }}{% endif %}.
+        {{ user.first_name or user.username }}{% if user.last_name %} {{ user.last_name }}{% endif %}.
       </div>
       <div class="welcome-meta">Role: {{ user.role }}</div>
     </div>
 
     <div class="tiles">
-      <!-- Residents -->
-      <a class="tile residents" href="/residents">
+      <a class="tile residents" href="{{ url_for('residents_list') }}">
         <div class="tile-title">
           <span class="tile-title-icon">👥</span>
           Residents
@@ -198,8 +232,7 @@
         <div class="tile-text">Manage resident details &amp; print cards.</div>
       </a>
 
-      <!-- Inventory -->
-      <a class="tile inventory" href="/inventory">
+      <a class="tile inventory" href="{{ url_for('inventory_list') }}">
         <div class="tile-title">
           <span class="tile-title-icon">📦</span>
           Inventory
@@ -207,8 +240,7 @@
         <div class="tile-text">Track stock &amp; supplies.</div>
       </a>
 
-      <!-- Menu -->
-      <a class="tile menu" href="/menu">
+      <a class="tile menu" href="{{ url_for('menu_hub') }}">
         <div class="tile-title">
           <span class="tile-title-icon">🍽</span>
           Menu
@@ -216,8 +248,7 @@
         <div class="tile-text">Plan menus &amp; schedule meals.</div>
       </a>
 
-      <!-- Staff -->
-      <a class="tile staff" href="/staff">
+      <a class="tile staff" href="{{ url_for('staff_list') }}">
         <div class="tile-title">
           <span class="tile-title-icon">📊</span>
           Staff
@@ -228,100 +259,22 @@
   </main>
 
   <!-- MealMind assistant widget -->
-<button id="mm-chat-btn" title="Chat with MealMind">
-  💬
-</button>
-
-<div id="mm-chat-panel">
-  <div class="mm-chat-header">
-    <span>MealMind Assistant</span>
-    <button id="mm-chat-close">✕</button>
+  <button id="mm-chat-btn" title="Chat with MealMind">💬</button>
+  <div id="mm-chat-panel">
+    <div class="mm-chat-header">
+      <span>MealMind Assistant</span>
+      <button id="mm-chat-close">✕</button>
+    </div>
+    <iframe src="{{ url_for('assistant') }}" class="mm-chat-frame"></iframe>
   </div>
-  <iframe src="{{ url_for('assistant') }}" class="mm-chat-frame"></iframe>
-</div>
 
-<style>
-  #mm-chat-btn {
-    position: fixed;
-    right: 24px;
-    bottom: 24px;
-    width: 58px;
-    height: 58px;
-    border-radius: 9999px;
-    border: none;
-    background: linear-gradient(160deg,#0f6fff 0%, #0cc5a7 100%);
-    color: #fff;
-    font-size: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-    cursor: pointer;
-    z-index: 9999;
-  }
+  <script>
+    const btn = document.getElementById('mm-chat-btn');
+    const panel = document.getElementById('mm-chat-panel');
+    const closeBtn = document.getElementById('mm-chat-close');
 
-  #mm-chat-panel {
-    position: fixed;
-    right: 24px;
-    bottom: 92px;
-    width: 380px;
-    height: 520px;
-    background: #fff;
-    border-radius: 18px;
-    box-shadow: 0 16px 40px rgba(15, 111, 255, 0.25);
-    overflow: hidden;
-    display: none;
-    z-index: 10000;
-  }
-
-  .mm-chat-header {
-    background: #0f6fff;
-    color: #fff;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 14px;
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .mm-chat-header button {
-    background: transparent;
-    border: none;
-    color: #fff;
-    font-size: 16px;
-    cursor: pointer;
-  }
-
-  .mm-chat-frame {
-    border: none;
-    width: 100%;
-    height: calc(100% - 44px);
-  }
-
-  @media (max-width: 640px) {
-    #mm-chat-panel {
-      right: 12px;
-      width: calc(100% - 24px);
-      height: 65vh;
-    }
-  }
-</style>
-
-<script>
-  const btn = document.getElementById('mm-chat-btn');
-  const panel = document.getElementById('mm-chat-panel');
-  const closeBtn = document.getElementById('mm-chat-close');
-
-  btn.addEventListener('click', () => {
-    panel.style.display = 'block';
-  });
-
-  closeBtn.addEventListener('click', () => {
-    panel.style.display = 'none';
-  });
-</script>
-
+    btn.addEventListener('click', () => panel.style.display = 'block');
+    closeBtn.addEventListener('click', () => panel.style.display = 'none');
+  </script>
 </body>
 </html>
