@@ -286,7 +286,8 @@ def create_app():
                 or_(User.username.ilike(username), User.employee_id.ilike(username))
             ).first()
 
-            if user and _verify_password(getattr(user, "password", None), password):
+            stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
+            if user and _verify_password(stored, password):
                 # MFA gate if enabled
                 if getattr(user, "mfa_secret", None):
                     session["pre_2fa_uid"] = user.id
