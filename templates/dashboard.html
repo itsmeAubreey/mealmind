@@ -1,206 +1,130 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>Dashboard · MealMind</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    /* Base */
     :root{
-      --text:#111;
-      --muted:#667085;
-      --border:#eaecf0;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:#e2e8f0;
       --bg:#ffffff;
-      --tile:#f9fafb;
-      --shadow:0 8px 24px rgba(16,24,40,.06);
-      --purple:#6e56cf;   /* Residents */
-      --green:#2e7d32;    /* Inventory */
-      --blue:#0a4ea3;     /* Menu */
-      --red:#b42318;      /* Staff */
-      --gray:#334155;     /* AI */
+      --tile:#f8fafc;
+      --shadow:0 10px 28px rgba(16,24,40,.08);
+      --brand:#0b5cff;           /* top banner */
+      --brand-dark:#083e99;
+
+      /* tile accents */
+      --purple:#6e56cf;          /* Residents */
+      --green:#2e7d32;           /* Inventory */
+      --blue:#0a4ea3;            /* Menu */
+      --red:#b42318;             /* Staff */
+      --gray:#334155;            /* AI */
     }
     *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
 
-    /* Header */
-    header{
+    /* Header (MealMind banner) */
+    .header{
       position:sticky; top:0; z-index:10;
       display:flex; align-items:center; justify-content:space-between;
-      padding:14px 18px; border-bottom:1px solid var(--border); background:#fff;
+      padding:14px 18px; background:var(--brand); color:#fff;
+      box-shadow:0 1px 0 rgba(255,255,255,.06) inset;
     }
-    .brand a{color:var(--text); text-decoration:none; font-weight:700;}
-    .actions a{
-      display:inline-block; text-decoration:none; color:var(--text);
-      border:1px solid var(--border); padding:8px 12px; border-radius:10px;
+    .brand{
+      display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.2px;
     }
+    .brand .logo{
+      display:inline-grid; place-items:center; width:28px; height:28px; border-radius:6px;
+      background:#fff; color:var(--brand); font-weight:800;
+      box-shadow:0 2px 6px rgba(0,0,0,.15);
+    }
+    .header a.logout{
+      text-decoration:none; color:#fff; background:rgba(255,255,255,.16);
+      padding:8px 12px; border-radius:10px; font-weight:600;
+      border:1px solid rgba(255,255,255,.25);
+    }
+    .header a.logout:hover{ background:rgba(255,255,255,.22) }
 
     /* Page */
-    .wrap{max-width:1100px; margin:24px auto; padding:0 16px}
-    .hello{color:var(--muted); margin:0 0 12px}
-    .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px}
+    .wrap{max-width:1180px; margin:28px auto; padding:0 20px}
+    .hello{color:var(--muted); margin:0 0 14px}
 
-    /* Tile */
+    .grid{
+      display:grid; gap:20px;
+      grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+    }
     .card{
       display:block; background:var(--tile); border:1px solid var(--border);
-      border-radius:16px; padding:16px; text-decoration:none; color:inherit;
-      box-shadow:var(--shadow); transition:transform .08s ease, box-shadow .08s ease, border-color .08s ease;
-      will-change:transform;
+      border-radius:18px; padding:18px; text-decoration:none; color:inherit;
+      box-shadow:var(--shadow);
+      transition:transform .08s ease, box-shadow .08s ease, border-color .08s ease;
     }
-    .card:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(16,24,40,.1); border-color:#e2e8f0 }
-    .title{font-weight:700; margin:2px 0 6px}
-    .kicker{font-size:12px; color:var(--muted)}
+    .card:hover{ transform:translateY(-2px); box-shadow:0 14px 34px rgba(16,24,40,.12); border-color:#dbe4f0 }
     .pill{
       display:inline-flex; align-items:center; gap:8px;
-      font-size:12px; color:#fff; padding:4px 10px; border-radius:999px; margin-bottom:10px;
+      font-size:12px; color:#fff; padding:5px 11px; border-radius:999px; margin-bottom:10px;
+      box-shadow:0 4px 12px rgba(2,6,23,.12);
     }
     .pill.purple{background:var(--purple)}
     .pill.green{background:var(--green)}
     .pill.blue{background:var(--blue)}
     .pill.red{background:var(--red)}
     .pill.gray{background:var(--gray)}
+    .title{font-weight:800; font-size:18px; margin:2px 0 8px}
+    .kicker{font-size:13px; color:var(--muted)}
 
-    /* Footer note */
-    .foot{margin-top:22px; color:var(--muted); font-size:12px}
+    .foot{margin-top:24px; color:var(--muted); font-size:12px}
+
+    /* Assistant FAB */
+    .mm-fab{
+      position:fixed; right:22px; bottom:22px; z-index:9999;
+      width:56px; height:56px; border-radius:50%; border:0; cursor:pointer; color:#fff;
+      background:linear-gradient(135deg,#2563eb,#22c55e); box-shadow:0 10px 26px rgba(0,0,0,.2);
+      font-size:24px;
+    }
+    .mm-panel{
+      position:fixed; right:22px; bottom:90px; z-index:9999; width:360px; max-width:calc(100vw - 44px);
+      background:#fff; border-radius:16px; overflow:hidden; border:1px solid #e5e7eb; display:none;
+      box-shadow:0 20px 40px rgba(0,0,0,.22);
+    }
+    .mm-head{display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:#0f172a; color:#fff}
+    .mm-title{font-weight:700; font-size:14px}
+    .mm-close{background:transparent; color:#fff; border:0; font-size:20px; cursor:pointer}
+    .mm-body{height:360px; overflow-y:auto; padding:12px; background:#f8fafc}
+    .mm-row{margin:8px 0; display:flex}
+    .mm-row.you{justify-content:flex-end}
+    .mm-bubble{max-width:75%; padding:10px 12px; border-radius:14px; font-size:14px; background:#e2e8f0; color:#0f172a}
+    .mm-row.you .mm-bubble{background:#2563eb; color:#fff}
+    .mm-hint{font-size:12px; color:#64748b; padding:0 12px 8px}
+    .mm-foot{display:flex; gap:8px; padding:10px; border-top:1px solid #e5e7eb}
+    .mm-input{flex:1; border:1px solid #cbd5e1; border-radius:10px; padding:10px 12px; font-size:14px}
+    .mm-send{border:0; border-radius:10px; padding:10px 14px; background:#2563eb; color:#fff; cursor:pointer}
   </style>
 </head>
-  <!-- ===== MealMind Assistant Widget (Dashboard-only) ===== -->
-<style>
-  .mm-assist-fab {
-    position: fixed; right: 24px; bottom: 24px; z-index: 9999;
-    width: 56px; height: 56px; border-radius: 50%;
-    border: none; cursor: pointer; font-size: 24px; color: #fff;
-    background: linear-gradient(135deg, #2563eb, #22c55e);
-    box-shadow: 0 8px 22px rgba(0,0,0,0.18);
-  }
-  .mm-assist-panel {
-    position: fixed; right: 24px; bottom: 92px; z-index: 9999;
-    width: 360px; max-width: calc(100vw - 48px);
-    background: #ffffff; border-radius: 16px; overflow: hidden;
-    box-shadow: 0 18px 36px rgba(0,0,0,0.22); display: none;
-    border: 1px solid #e5e7eb;
-  }
-  .mm-assist-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 14px; background: #0f172a; color: #fff;
-  }
-  .mm-assist-title { font-weight: 600; font-size: 14px; }
-  .mm-assist-close { background: transparent; color: #fff; border: 0; font-size: 20px; cursor: pointer; }
-  .mm-assist-body { height: 360px; overflow-y: auto; padding: 12px; background: #f8fafc; }
-  .mm-msg { margin: 8px 0; display: flex; }
-  .mm-msg-user { justify-content: flex-end; }
-  .mm-bubble {
-    max-width: 75%; padding: 10px 12px; border-radius: 14px; font-size: 14px; line-height: 1.35;
-    background: #e2e8f0; color: #0f172a;
-  }
-  .mm-msg-user .mm-bubble { background: #2563eb; color: #fff; }
-  .mm-assist-footer { display: flex; gap: 8px; padding: 10px; background: #ffffff; border-top: 1px solid #e5e7eb; }
-  .mm-assist-input {
-    flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; font-size: 14px;
-  }
-  .mm-assist-send {
-    border: none; border-radius: 10px; padding: 10px 14px; background: #2563eb; color: white; cursor: pointer;
-  }
-  .mm-hint {
-    font-size: 12px; color: #64748b; padding: 0 12px 8px;
-  }
-</style>
-
-<div id="mm-assist" class="mm-assist-panel" aria-live="polite">
-  <div class="mm-assist-header">
-    <div class="mm-assist-title">MealMind Assistant</div>
-    <button class="mm-assist-close" title="Close">&times;</button>
-  </div>
-  <div id="mm-assist-body" class="mm-assist-body">
-    <div class="mm-msg">
-      <div class="mm-bubble">Hi! 👋 I can help you find things. Try “Where is inventory?” or “How do I add residents?”</div>
-    </div>
-  </div>
-  <div class="mm-hint">Tip: I can link you directly to Residents, Inventory, Menu, and Staff.</div>
-  <div class="mm-assist-footer">
-    <input id="mm-assist-input" class="mm-assist-input" type="text" placeholder="Type your question…" />
-    <button id="mm-assist-send" class="mm-assist-send">Send</button>
-  </div>
-</div>
-
-<button id="mm-assist-fab" class="mm-assist-fab" title="Chat with MealMind">💬</button>
-
-<script>
-(function() {
-  const panel = document.getElementById('mm-assist');
-  const fab   = document.getElementById('mm-assist-fab');
-  const body  = document.getElementById('mm-assist-body');
-  const input = document.getElementById('mm-assist-input');
-  const send  = document.getElementById('mm-assist-send');
-  const close = panel.querySelector('.mm-assist-close');
-
-  function addMsg(text, fromUser) {
-    const row = document.createElement('div');
-    row.className = 'mm-msg' + (fromUser ? ' mm-msg-user' : '');
-    const bubble = document.createElement('div');
-    bubble.className = 'mm-bubble';
-    bubble.innerText = text;
-    row.appendChild(bubble);
-    body.appendChild(row);
-    body.scrollTop = body.scrollHeight;
-  }
-
-  async function ask() {
-    const t = input.value.trim();
-    if (!t) return;
-    addMsg(t, true);
-    input.value = '';
-
-    // typing indicator
-    const typing = document.createElement('div');
-    typing.className = 'mm-msg';
-    typing.innerHTML = '<div class="mm-bubble">…</div>';
-    body.appendChild(typing);
-    body.scrollTop = body.scrollHeight;
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message: t})
-      });
-      const data = await res.json();
-      typing.remove();
-      if (data && data.ok) {
-        addMsg(data.reply, false);
-      } else {
-        addMsg('Sorry, something went wrong.', false);
-      }
-    } catch(e) {
-      typing.remove();
-      addMsg('Network error. Please try again.', false);
-    }
-  }
-
-  fab.addEventListener('click', () => { panel.style.display = 'block'; input.focus(); });
-  close.addEventListener('click', () => { panel.style.display = 'none'; });
-  send.addEventListener('click', ask);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
-})();
-</script>
-<!-- ===== End MealMind Assistant Widget ===== -->
 
 <body>
-  <header>
-    <div class="brand"><a href="/dashboard">Kitchen Management Tool</a></div>
-    <div class="actions"><a href="/logout">Logout</a></div>
+  <!-- Top banner -->
+  <header class="header">
+    <div class="brand">
+      <span class="logo">M</span>
+      <span>MealMind</span>
+    </div>
+    <a class="logout" href="/logout">↪ Logout</a>
   </header>
 
   <main class="wrap">
     {% set user = current_user or {} %}
     {% set fname = user.get('first_name','') %}
     {% if fname %}
-      <p class="hello">Welcome back, {{ fname }}.</p>
+      <p class="hello">Welcome, <strong>{{ fname }}</strong>.</p>
     {% endif %}
 
-    {# Fallback if 'tiles' not provided #}
+    {# Fallback tiles if none passed in #}
     {% if not tiles %}
       {% set tiles = [
-        ("Residents", url_for('residents_list'), "purple", "View and print resident cards"),
+        ("Residents", url_for('residents_list'), "purple", "View & print resident cards"),
         ("Inventory", url_for('inventory_list'), "green", "Manage stock and export CSV"),
         ("Menu", url_for('menu_hub'), "blue", "Build menus, schedule, and view planned week"),
         ("Staff", url_for('staff_list'), "red", "Add & manage staff accounts"),
@@ -218,7 +142,75 @@
       {% endfor %}
     </section>
 
-    <p class="foot">Tip: Use the <strong>Kitchen Assistant (AI)</strong> tile for quick menu ideas that respect inventory and allergies. You decide what to apply.</p>
+    <p class="foot">Tip: Use the <strong>Kitchen Assistant (AI)</strong> tile for quick menu ideas that respect inventory and allergies.</p>
   </main>
+
+  <!-- Assistant widget -->
+  <div id="mm-panel" class="mm-panel" aria-live="polite">
+    <div class="mm-head">
+      <div class="mm-title">MealMind Assistant</div>
+      <button id="mm-close" class="mm-close" title="Close">&times;</button>
+    </div>
+    <div id="mm-body" class="mm-body">
+      <div class="mm-row"><div class="mm-bubble">Hi! 👋 I can help you find things. Try “Where is inventory?” or “How do I add residents?”</div></div>
+    </div>
+    <div class="mm-hint">I can link you directly to Residents, Inventory, Menu, and Staff.</div>
+    <div class="mm-foot">
+      <input id="mm-input" class="mm-input" type="text" placeholder="Type your question…" />
+      <button id="mm-send" class="mm-send">Send</button>
+    </div>
+  </div>
+  <button id="mm-fab" class="mm-fab" title="Chat with MealMind">💬</button>
+
+  <script>
+    (function () {
+      const panel = document.getElementById('mm-panel');
+      const fab   = document.getElementById('mm-fab');
+      const body  = document.getElementById('mm-body');
+      const input = document.getElementById('mm-input');
+      const send  = document.getElementById('mm-send');
+      const close = document.getElementById('mm-close');
+
+      function addMsg(t, you){
+        const row = document.createElement('div');
+        row.className = 'mm-row' + (you ? ' you' : '');
+        const bubble = document.createElement('div');
+        bubble.className = 'mm-bubble';
+        bubble.textContent = t;
+        row.appendChild(bubble);
+        body.appendChild(row);
+        body.scrollTop = body.scrollHeight;
+      }
+      async function ask(){
+        const t = input.value.trim();
+        if(!t) return;
+        addMsg(t, true);
+        input.value = '';
+
+        const typing = document.createElement('div');
+        typing.className = 'mm-row';
+        typing.innerHTML = '<div class="mm-bubble">…</div>';
+        body.appendChild(typing);
+        body.scrollTop = body.scrollHeight;
+
+        try{
+          const res = await fetch('/api/chat', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({message: t})
+          });
+          const data = await res.json();
+          typing.remove();
+          addMsg((data && data.ok) ? data.reply : 'Sorry, something went wrong.', false);
+        }catch(e){
+          typing.remove();
+          addMsg('Network error. Please try again.', false);
+        }
+      }
+      fab.addEventListener('click', ()=>{ panel.style.display='block'; input.focus(); });
+      close.addEventListener('click', ()=>{ panel.style.display='none'; });
+      send.addEventListener('click', ask);
+      input.addEventListener('keydown', e=>{ if(e.key==='Enter') ask(); });
+    })();
+  </script>
 </body>
 </html>
