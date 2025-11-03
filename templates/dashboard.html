@@ -63,6 +63,127 @@
     .foot{margin-top:22px; color:var(--muted); font-size:12px}
   </style>
 </head>
+  <!-- ===== MealMind Assistant Widget (Dashboard-only) ===== -->
+<style>
+  .mm-assist-fab {
+    position: fixed; right: 24px; bottom: 24px; z-index: 9999;
+    width: 56px; height: 56px; border-radius: 50%;
+    border: none; cursor: pointer; font-size: 24px; color: #fff;
+    background: linear-gradient(135deg, #2563eb, #22c55e);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+  }
+  .mm-assist-panel {
+    position: fixed; right: 24px; bottom: 92px; z-index: 9999;
+    width: 360px; max-width: calc(100vw - 48px);
+    background: #ffffff; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 18px 36px rgba(0,0,0,0.22); display: none;
+    border: 1px solid #e5e7eb;
+  }
+  .mm-assist-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: #0f172a; color: #fff;
+  }
+  .mm-assist-title { font-weight: 600; font-size: 14px; }
+  .mm-assist-close { background: transparent; color: #fff; border: 0; font-size: 20px; cursor: pointer; }
+  .mm-assist-body { height: 360px; overflow-y: auto; padding: 12px; background: #f8fafc; }
+  .mm-msg { margin: 8px 0; display: flex; }
+  .mm-msg-user { justify-content: flex-end; }
+  .mm-bubble {
+    max-width: 75%; padding: 10px 12px; border-radius: 14px; font-size: 14px; line-height: 1.35;
+    background: #e2e8f0; color: #0f172a;
+  }
+  .mm-msg-user .mm-bubble { background: #2563eb; color: #fff; }
+  .mm-assist-footer { display: flex; gap: 8px; padding: 10px; background: #ffffff; border-top: 1px solid #e5e7eb; }
+  .mm-assist-input {
+    flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; font-size: 14px;
+  }
+  .mm-assist-send {
+    border: none; border-radius: 10px; padding: 10px 14px; background: #2563eb; color: white; cursor: pointer;
+  }
+  .mm-hint {
+    font-size: 12px; color: #64748b; padding: 0 12px 8px;
+  }
+</style>
+
+<div id="mm-assist" class="mm-assist-panel" aria-live="polite">
+  <div class="mm-assist-header">
+    <div class="mm-assist-title">MealMind Assistant</div>
+    <button class="mm-assist-close" title="Close">&times;</button>
+  </div>
+  <div id="mm-assist-body" class="mm-assist-body">
+    <div class="mm-msg">
+      <div class="mm-bubble">Hi! 👋 I can help you find things. Try “Where is inventory?” or “How do I add residents?”</div>
+    </div>
+  </div>
+  <div class="mm-hint">Tip: I can link you directly to Residents, Inventory, Menu, and Staff.</div>
+  <div class="mm-assist-footer">
+    <input id="mm-assist-input" class="mm-assist-input" type="text" placeholder="Type your question…" />
+    <button id="mm-assist-send" class="mm-assist-send">Send</button>
+  </div>
+</div>
+
+<button id="mm-assist-fab" class="mm-assist-fab" title="Chat with MealMind">💬</button>
+
+<script>
+(function() {
+  const panel = document.getElementById('mm-assist');
+  const fab   = document.getElementById('mm-assist-fab');
+  const body  = document.getElementById('mm-assist-body');
+  const input = document.getElementById('mm-assist-input');
+  const send  = document.getElementById('mm-assist-send');
+  const close = panel.querySelector('.mm-assist-close');
+
+  function addMsg(text, fromUser) {
+    const row = document.createElement('div');
+    row.className = 'mm-msg' + (fromUser ? ' mm-msg-user' : '');
+    const bubble = document.createElement('div');
+    bubble.className = 'mm-bubble';
+    bubble.innerText = text;
+    row.appendChild(bubble);
+    body.appendChild(row);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  async function ask() {
+    const t = input.value.trim();
+    if (!t) return;
+    addMsg(t, true);
+    input.value = '';
+
+    // typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'mm-msg';
+    typing.innerHTML = '<div class="mm-bubble">…</div>';
+    body.appendChild(typing);
+    body.scrollTop = body.scrollHeight;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: t})
+      });
+      const data = await res.json();
+      typing.remove();
+      if (data && data.ok) {
+        addMsg(data.reply, false);
+      } else {
+        addMsg('Sorry, something went wrong.', false);
+      }
+    } catch(e) {
+      typing.remove();
+      addMsg('Network error. Please try again.', false);
+    }
+  }
+
+  fab.addEventListener('click', () => { panel.style.display = 'block'; input.focus(); });
+  close.addEventListener('click', () => { panel.style.display = 'none'; });
+  send.addEventListener('click', ask);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+})();
+</script>
+<!-- ===== End MealMind Assistant Widget ===== -->
+
 <body>
   <header>
     <div class="brand"><a href="/dashboard">Kitchen Management Tool</a></div>
