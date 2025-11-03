@@ -1,368 +1,230 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Dashboard · MealMind</title>
+  <meta charset="UTF-8" />
+  <title>MealMind · Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      --blue:#0b5cff;
-      --surface:#f3f6fb;
-      --text:#0f172a;
-      --muted:#64748b;
+      --blue: #065fd4;
+      --bg: #edf1f7;
+      --card-radius: 18px;
     }
-    * { box-sizing:border-box; }
+    * {
+      box-sizing: border-box;
+    }
     body {
-      margin:0;
-      background:var(--surface);
-      font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      color:var(--text);
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f6fa;
+      min-height: 100vh;
+      color: #132238;
     }
-
-    /* top banner */
+    /* top bar */
     .topbar {
-      background:var(--blue);
-      color:#fff;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:14px 20px;
-      gap:12px;
+      height: 64px;
+      background: #065fd4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      border-bottom: 1px solid rgba(0,0,0,.05);
     }
     .brand {
-      display:flex;
-      gap:10px;
-      align-items:center;
-      text-decoration:none;
-      color:#fff;
-      font-weight:700;
-      letter-spacing:.2px;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      text-decoration: none;
+      color: #fff;
     }
-    .brand-logo {
-      width:30px; height:30px;
-      background:#fff;
-      color:var(--blue);
-      border-radius:8px;
-      display:grid;
-      place-items:center;
-      font-weight:800;
-      box-shadow:0 3px 10px rgba(0,0,0,.15);
+    .brand-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      color: #065fd4;
+      font-size: .9rem;
     }
-    .logout {
-      text-decoration:none;
-      background:rgba(255,255,255,.12);
-      border:1px solid rgba(255,255,255,.25);
-      padding:7px 14px;
-      border-radius:10px;
-      color:#fff;
-      font-weight:600;
+    .brand-title {
+      font-weight: 600;
+      font-size: 1.3rem;
+      letter-spacing: .01em;
     }
-    .logout:hover { background:rgba(255,255,255,.2); }
-
-    /* main area */
-    .wrap {
-      max-width:1180px;
-      margin:28px auto 50px;
-      padding:0 20px;
+    .logout-btn {
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.35);
+      color: #fff;
+      padding: .55rem 1.1rem;
+      border-radius: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      display: inline-flex;
+      gap: .4rem;
+      align-items: center;
     }
-    .hello {
-      font-size:1.6rem;
-      font-weight:650;
-      margin-bottom:6px;
+    .main {
+      max-width: 1150px;
+      margin: 1.4rem auto 2.5rem;
+      padding: 0 1.5rem;
     }
-    .role {
-      color:var(--muted);
-      margin-bottom:28px;
+    .welcome-block {
+      margin-bottom: 1.4rem;
     }
-
-    /* cards row */
-    .tile-row {
-      display:flex;
-      flex-wrap:wrap;
-      gap:20px;
+    .welcome-title {
+      font-size: 1.45rem;
+      font-weight: 600;
+      margin-bottom: .25rem;
+    }
+    .welcome-meta {
+      font-size: .9rem;
+      color: #5c6b80;
+    }
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1.35rem;
     }
     .tile {
-      flex:1 1 230px;
-      border-radius:20px;
-      padding:18px 18px 20px;
-      color:#fff;
-      text-decoration:none;
-      min-height:150px;
-      box-shadow:0 14px 30px rgba(0,0,0,.12);
-      transition:transform .08s ease-out, box-shadow .08s ease-out;
-      position:relative;
-      overflow:hidden;
+      border-radius: 22px;
+      padding: 1.1rem 1.05rem 1.1rem 1.05rem;
+      color: #fff;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      min-height: 160px;
+      box-shadow: 0 18px 25px rgba(0,0,0,.12);
+      position: relative;
+      overflow: hidden;
     }
-    .tile:hover {
-      transform:translateY(-2px);
-      box-shadow:0 18px 34px rgba(0,0,0,.13);
-    }
-    .tile-icon {
-      width:42px; height:42px;
-      background:rgba(255,255,255,.22);
-      border:1px solid rgba(255,255,255,.3);
-      border-radius:16px;
-      display:grid;
-      place-items:center;
-      margin-bottom:14px;
+    .tile-badge {
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 9999px;
+      padding: .3rem .75rem;
+      font-size: .68rem;
+      width: fit-content;
+      margin-bottom: .75rem;
     }
     .tile-title {
-      font-size:1.15rem;
-      font-weight:700;
-      margin-bottom:6px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: .45rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .tile-title-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.2);
+      display: grid;
+      place-items: center;
+      font-size: 1.1rem;
     }
     .tile-text {
-      font-size:.9rem;
-      line-height:1.45;
-      opacity:.95;
-      max-width:230px;
+      font-size: .85rem;
+      max-width: 240px;
+      line-height: 1.4;
+      opacity: .94;
     }
-
-    /* gradients */
     .tile.residents {
-      background:linear-gradient(145deg,#8254ff 0%,#7040d0 100%);
+      background: linear-gradient(140deg, #7a58ff 0%, #7f35dd 100%);
     }
     .tile.inventory {
-      background:linear-gradient(145deg,#0bab64 0%,#22c08a 100%);
+      background: linear-gradient(140deg, #13b36b 0%, #0a8f55 100%);
     }
     .tile.menu {
-      background:linear-gradient(145deg,#3671ff 0%,#0b49c9 100%);
+      background: linear-gradient(140deg, #3b82f6 0%, #175cd3 100%);
     }
     .tile.staff {
-      background:linear-gradient(145deg,#ff4b5c 0%,#d02132 100%);
+      background: linear-gradient(140deg, #e63964 0%, #c91b44 100%);
     }
-
-    /* assistant button */
-    .mm-fab {
-      position:fixed;
-      right:20px;
-      bottom:20px;
-      width:56px; height:56px;
-      border-radius:50%;
-      border:0;
-      background:linear-gradient(135deg,#2563eb,#22c55e);
-      color:#fff;
-      font-size:24px;
-      box-shadow:0 10px 25px rgba(0,0,0,.25);
-      cursor:pointer;
-      z-index:999;
+    /* little wave in the corner */
+    .tile::after {
+      content: "";
+      position: absolute;
+      right: -30px;
+      bottom: -30px;
+      width: 140px;
+      height: 140px;
+      background: rgba(255,255,255,.12);
+      border-radius: 9999px;
+      filter: blur(0);
     }
-    .mm-panel {
-      position:fixed;
-      right:20px;
-      bottom:90px;
-      width:360px;
-      max-width:calc(100vw - 40px);
-      background:#fff;
-      border-radius:16px;
-      border:1px solid #e2e8f0;
-      box-shadow:0 18px 40px rgba(15,23,42,.22);
-      display:none;
-      overflow:hidden;
-      z-index:999;
-    }
-    .mm-head {
-      background:#0f172a;
-      color:#fff;
-      padding:12px 12px;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-    }
-    .mm-close {
-      background:transparent;
-      border:0;
-      color:#fff;
-      font-size:20px;
-      cursor:pointer;
-    }
-    .mm-body {
-      background:#f8fafc;
-      padding:10px 12px;
-      height:340px;
-      overflow-y:auto;
-    }
-    .mm-row{margin:6px 0; display:flex;}
-    .mm-row.you{justify-content:flex-end;}
-    .mm-bubble {
-      background:#e2e8f0;
-      border-radius:14px;
-      padding:8px 11px;
-      max-width:78%;
-      font-size:14px;
-    }
-    .mm-row.you .mm-bubble {
-      background:#2563eb;
-      color:#fff;
-    }
-    .mm-foot {
-      display:flex;
-      gap:6px;
-      padding:10px;
-      border-top:1px solid #e2e8f0;
-      background:#fff;
-    }
-    .mm-input {
-      flex:1;
-      border:1px solid #cbd5e1;
-      border-radius:10px;
-      padding:8px 10px;
-    }
-    .mm-send {
-      border:0; background:#2563eb; color:#fff; border-radius:9px; padding:8px 11px; cursor:pointer;
-    }
-
-    @media (max-width:760px) {
-      .hello { font-size:1.35rem; }
-      .tile-row { flex-direction:column; }
-      .tile { min-height:140px; }
+    @media (max-width: 670px) {
+      .topbar {
+        flex-wrap: wrap;
+        gap: .5rem;
+        height: auto;
+        padding: .75rem 1rem;
+      }
+      .main {
+        margin-top: 1rem;
+      }
     }
   </style>
 </head>
 <body>
-  <!-- header -->
   <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') if 'dashboard' in globals() else '/' }}">
-      <span class="brand-logo">M</span>
-      <span>MealMind</span>
+    <!-- make MealMind clickable to dashboard -->
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="brand-badge">M</span>
+      <span class="brand-title">MealMind</span>
     </a>
-    <a class="logout" href="{{ url_for('logout') }}">↪ Logout</a>
+    <a class="logout-btn" href="{{ url_for('logout') }}">↪ Logout</a>
   </header>
 
-  <main class="wrap">
-    {% set user = current_user or {} %}
-    {% set fname = user.get('first_name','') %}
-    {% set role  = user.get('role','') %}
-
-    <div class="hello">
-      {% if fname %}Welcome, {{ fname }}.{% else %}Welcome.{% endif %}
+  <main class="main">
+    <div class="welcome-block">
+      <div class="welcome-title">
+        Welcome,
+        {{ (user.first_name or user.username) }}
+        {% if user.last_name %} {{ user.last_name }}{% endif %}.
+      </div>
+      <div class="welcome-meta">Role: {{ user.role }}</div>
     </div>
-    {% if role %}
-      <div class="role">Role: <strong>{{ role }}</strong></div>
-    {% endif %}
 
-    <div class="tile-row">
-      <a class="tile residents" href="{{ url_for('residents_list') }}">
-        <div class="tile-icon">
-          <!-- people icon -->
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
+    <div class="tiles">
+      <!-- Residents -->
+      <a class="tile residents" href="/residents">
+        <div class="tile-title">
+          <span class="tile-title-icon">👥</span>
+          Residents
         </div>
-        <div class="tile-title">Residents</div>
         <div class="tile-text">Manage resident details &amp; print cards.</div>
       </a>
 
-      <a class="tile inventory" href="{{ url_for('inventory_list') }}">
-        <div class="tile-icon">
-          <!-- box icon -->
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m21 16-4 4-4-4"/>
-            <path d="M17 20V4"/>
-            <path d="M3 4h11v4H3z"/>
-            <path d="M3 12h8"/>
-            <path d="M3 20h8v-4H3z"/>
-          </svg>
+      <!-- Inventory -->
+      <a class="tile inventory" href="/inventory">
+        <div class="tile-title">
+          <span class="tile-title-icon">📦</span>
+          Inventory
         </div>
-        <div class="tile-title">Inventory</div>
         <div class="tile-text">Track stock &amp; supplies.</div>
       </a>
 
-      <a class="tile menu" href="{{ url_for('menu_hub') }}">
-        <div class="tile-icon">
-          <!-- plate icon -->
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5" />
-            <path d="M5 3v18"/>
-            <path d="M19 3v18"/>
-          </svg>
+      <!-- Menu -->
+      <a class="tile menu" href="/menu">
+        <div class="tile-title">
+          <span class="tile-title-icon">🍽</span>
+          Menu
         </div>
-        <div class="tile-title">Menu</div>
         <div class="tile-text">Plan menus &amp; schedule meals.</div>
       </a>
 
-      <a class="tile staff" href="{{ url_for('staff_list') }}">
-        <div class="tile-icon">
-          <!-- chart/users icon -->
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 3v18h18"/>
-            <path d="M7 14l3-3 4 4 5-5"/>
-          </svg>
+      <!-- Staff -->
+      <a class="tile staff" href="/staff">
+        <div class="tile-title">
+          <span class="tile-title-icon">📊</span>
+          Staff
         </div>
-        <div class="tile-title">Staff</div>
         <div class="tile-text">Add &amp; manage employees.</div>
       </a>
     </div>
   </main>
-
-  <!-- Assistant widget like before -->
-  <div id="mm-panel" class="mm-panel" aria-live="polite">
-    <div class="mm-head">
-      <div>MealMind Assistant</div>
-      <button id="mm-close" class="mm-close" aria-label="Close chat">&times;</button>
-    </div>
-    <div id="mm-body" class="mm-body">
-      <div class="mm-row"><div class="mm-bubble">Hi! I can jump you to Residents, Inventory, Menu, or Staff. Ask me anything.</div></div>
-    </div>
-    <div class="mm-foot">
-      <input id="mm-input" class="mm-input" placeholder="Type a question…" />
-      <button id="mm-send" class="mm-send">Send</button>
-    </div>
-  </div>
-  <button id="mm-fab" class="mm-fab" title="Chat with MealMind">💬</button>
-
-  <script>
-    (function() {
-      const panel = document.getElementById('mm-panel');
-      const fab   = document.getElementById('mm-fab');
-      const close = document.getElementById('mm-close');
-      const body  = document.getElementById('mm-body');
-      const input = document.getElementById('mm-input');
-      const send  = document.getElementById('mm-send');
-
-      function addMsg(t, you){
-        const r = document.createElement('div');
-        r.className = 'mm-row' + (you ? ' you' : '');
-        const b = document.createElement('div');
-        b.className = 'mm-bubble';
-        b.textContent = t;
-        r.appendChild(b);
-        body.appendChild(r);
-        body.scrollTop = body.scrollHeight;
-      }
-      async function ask(){
-        const q = input.value.trim();
-        if(!q) return;
-        addMsg(q, true);
-        input.value = '';
-        const typing = document.createElement('div');
-        typing.className = 'mm-row';
-        typing.innerHTML = '<div class="mm-bubble">…</div>';
-        body.appendChild(typing);
-        body.scrollTop = body.scrollHeight;
-        try {
-          const res = await fetch('/api/chat', {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({message:q})
-          });
-          const data = await res.json();
-          typing.remove();
-          addMsg(data && data.reply ? data.reply : 'Okay!', false);
-        } catch(e) {
-          typing.remove();
-          addMsg('Network error. Try again.', false);
-        }
-      }
-
-      fab.addEventListener('click', () => { panel.style.display = 'block'; input.focus(); });
-      close.addEventListener('click', () => { panel.style.display = 'none'; });
-      send.addEventListener('click', ask);
-      input.addEventListener('keydown', e => { if(e.key === 'Enter') ask(); });
-    })();
-  </script>
 </body>
 </html>
