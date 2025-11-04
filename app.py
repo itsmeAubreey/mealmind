@@ -490,20 +490,20 @@ def create_app():
             mimetype="text/csv",
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
-
     # ---------------- MENU HUB & PAGES ----------------
     @app.route("/menu")
     @login_required
     def menu_hub():
-        # your menu_hub.html links to several pages, so we created routes for them below
+        # your menu_hub.html links to several pages
         return render_template("menu_hub.html")
 
-    # this is the one the log said was missing: menu_builder
+    # builder page
     @app.route("/menu/builder")
     @login_required
     def menu_builder():
         return render_template("menu_builder.html")
 
+    # daily pages
     @app.route("/menu/daily")
     @login_required
     def menu_daily():
@@ -514,15 +514,43 @@ def create_app():
     def menu_daily_view():
         return render_template("menu_daily_view.html")
 
+    # ---- little API your template is calling (this was missing) ----
+    # e.g. {{ url_for('api_menu_items', menu_id=menu.id) }}
+    @app.route("/api/menu/<int:menu_id>/items")
+    @login_required
+    def api_menu_items(menu_id):
+        m = Menu.query.get_or_404(menu_id)
+        items = []
+        # if your model is Menu.ingredients -> MenuIngredient -> inventory_item
+        for ing in m.ingredients:
+            inv = ing.inventory_item
+            items.append(
+                {
+                    "id": ing.id,
+                    "inventory_id": ing.inventory_id,
+                    "name": inv.name if inv else "",
+                    "quantity": ing.quantity,
+                    "unit": ing.unit or (inv.unit if inv else ""),
+                }
+            )
+        return {
+            "id": m.id,
+            "title": m.title,
+            "meal_type": m.meal_type,
+            "items": items,
+        }
+
     # ---------------- MENU SCHEDULER ----------------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
+        # load all menus and bucket by meal for the UI
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
         for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
 
+        # original version showed the current week
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         week_end = monday + timedelta(days=6)
@@ -534,12 +562,16 @@ def create_app():
             .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
             .all()
         )
+
+        # group by day -> meal_type for easy rendering
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
             day_bucket.setdefault(s.meal_type, []).append(s)
 
+        # 7-day list for template
         days = [{"date": monday + timedelta(days=i)} for i in range(7)]
+
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
 
         return render_template(
@@ -607,6 +639,7 @@ def create_app():
     def planned_menu_view():
         return render_template("planned_menu_view.html")
 
+    
     # ---------------- health ----------------
     @app.route("/healthz")
     def healthz():
