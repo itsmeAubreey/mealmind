@@ -85,7 +85,7 @@
       </div>
       {% if user %}
         <div class="top-right">
-          <span class="user-chip">Welcome, {{ user.first_name or user.username }}</span>
+         
           <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
         </div>
       {% endif %}
