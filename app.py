@@ -1,11 +1,11 @@
-# app.py — MealMind (simplified / Azure-safe)
+# app.py — MealMind (working routes for your templates)
 import os
 from datetime import datetime, date
 from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, flash, jsonify
+    session, flash
 )
 from sqlalchemy import or_
 
@@ -15,7 +15,7 @@ from models import (
 )
 
 
-# ------------ small helpers ------------
+# ---------- helpers ----------
 def _parse_date(s):
     if not s:
         return None
@@ -42,11 +42,11 @@ def _to_float(v, default=0.0):
         return default
 
 
-# ------------ app factory ------------
+# ---------- app factory ----------
 def create_app():
     app = Flask(__name__)
 
-    # 1) if Azure gave us a URI, use it and create the folder
+    # choose an Azure-safe sqlite path
     env_uri = os.getenv("SQLALCHEMY_DATABASE_URI") or os.getenv("DATABASE_URL")
     if env_uri and env_uri.startswith("sqlite:///"):
         db_path = env_uri.replace("sqlite:///", "")
@@ -55,13 +55,11 @@ def create_app():
             os.makedirs(folder, exist_ok=True)
         db_uri = env_uri
     else:
-        # 2) Azure Linux writable path
         azure_dir = "/home/site/wwwroot"
         if os.path.exists(azure_dir):
             os.makedirs(azure_dir, exist_ok=True)
             db_uri = "sqlite:///" + os.path.join(azure_dir, "app.db")
         else:
-            # 3) local dev fallback
             inst = os.path.join(os.getcwd(), "instance")
             os.makedirs(inst, exist_ok=True)
             db_uri = "sqlite:///" + os.path.join(inst, "app.db")
@@ -74,10 +72,10 @@ def create_app():
     with app.app_context():
         db.create_all()
 
-    # make calc_age available to templates
+    # put age() in templates
     app.jinja_env.globals["age"] = _calc_age
 
-    # ------------- helpers for routes -------------
+    # ---------- context & decorators ----------
     @app.context_processor
     def inject_user():
         return {"current_user": session.get("user")}
@@ -93,7 +91,7 @@ def create_app():
     def current_role():
         return session.get("user", {}).get("role")
 
-    # ------------- AUTH -------------
+    # ---------- AUTH ----------
     @app.route("/")
     def home():
         if "user" in session:
@@ -110,14 +108,12 @@ def create_app():
                 or_(User.username.ilike(username), User.employee_id.ilike(username))
             ).first()
 
-            # we allow password_hash or legacy "password" field
             stored = None
             if user:
                 stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
 
             ok = False
             if user and stored:
-                # try werkzeug hash first
                 from werkzeug.security import check_password_hash
                 try:
                     ok = check_password_hash(stored, password)
@@ -143,14 +139,14 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
-    # ------------- DASHBOARD -------------
+    # ---------- DASHBOARD ----------
     @app.route("/dashboard")
     @login_required
     def dashboard():
         user = session.get("user", {})
         return render_template("dashboard.html", user=user)
 
-    # ------------- RESIDENTS -------------
+    # ---------- RESIDENTS ----------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -176,7 +172,6 @@ def create_app():
         if current_role() not in ("Manager", "Dietitian"):
             flash("No access.", "error")
             return redirect(url_for("residents_list"))
-
         if request.method == "POST":
             first_name = (request.form.get("first_name") or "").strip()
             last_name = (request.form.get("last_name") or "").strip()
@@ -184,7 +179,7 @@ def create_app():
             diet = (request.form.get("diet") or "").strip()
             allergies = (request.form.get("allergies") or "").strip()
             illnesses = (request.form.get("illnesses") or "").strip()
-            medications = (request.form.get("medications") or "").strip()
+            meds = (request.form.get("medications") or "").strip()
             fluids = (request.form.get("fluids") or "").strip()
             notes = (request.form.get("notes") or "").strip()
 
@@ -199,7 +194,7 @@ def create_app():
                 diet=diet,
                 allergies=allergies,
                 illnesses=illnesses,
-                medications=medications,
+                medications=meds,
                 fluids=fluids,
                 notes=notes,
             )
@@ -216,9 +211,7 @@ def create_app():
         if current_role() not in ("Manager", "Dietitian"):
             flash("No access.", "error")
             return redirect(url_for("residents_list"))
-
         r = Resident.query.get_or_404(rid)
-
         if request.method == "POST":
             r.first_name = (request.form.get("first_name") or "").strip()
             r.last_name = (request.form.get("last_name") or "").strip()
@@ -253,7 +246,7 @@ def create_app():
         r = Resident.query.get_or_404(rid)
         return render_template("resident_print.html", r=r)
 
-    # ------------- STAFF (manager) -------------
+    # ---------- STAFF ----------
     @app.route("/staff")
     @login_required
     def staff_list():
@@ -263,85 +256,7 @@ def create_app():
         users = User.query.order_by(User.last_name, User.first_name).all()
         return render_template("staff_list.html", users=users)
 
-    @app.route("/staff/new", methods=["GET", "POST"])
-    @login_required
-    def staff_new():
-        if current_role() != "Manager":
-            flash("No access.", "error")
-            return redirect(url_for("dashboard"))
-
-        if request.method == "POST":
-            first_name = (request.form.get("first_name") or "").strip()
-            last_name = (request.form.get("last_name") or "").strip()
-            username = (request.form.get("username") or "").strip().lower()
-            employee_id = (request.form.get("employee_id") or "").strip()
-            email = (request.form.get("email") or "").strip()
-            role = (request.form.get("role") or "Dietary Aide").strip()
-            temp_pw = (request.form.get("temp_password") or "").strip()
-
-            if not username or not employee_id or not temp_pw:
-                flash("Username, employee ID, and temp password are required.", "error")
-                return render_template("staff_form.html", mode="new", values=request.form)
-
-            if User.query.filter(
-                or_(User.username.ilike(username), User.employee_id.ilike(employee_id))
-            ).first():
-                flash("User with that username or employee ID already exists.", "error")
-                return render_template("staff_form.html", mode="new", values=request.form)
-
-            u = User(
-                first_name=first_name,
-                last_name=last_name,
-                username=username,
-                employee_id=employee_id,
-                email=email,
-                role=role,
-            )
-            u.set_password(temp_pw)
-            db.session.add(u)
-            db.session.commit()
-            return redirect(url_for("staff_list"))
-
-        return render_template("staff_form.html", mode="new", values={})
-
-    @app.route("/staff/<int:uid>/edit", methods=["GET", "POST"])
-    @login_required
-    def staff_edit(uid):
-        if current_role() != "Manager":
-            flash("No access.", "error")
-            return redirect(url_for("dashboard"))
-        u = User.query.get_or_404(uid)
-        if request.method == "POST":
-            u.first_name = (request.form.get("first_name") or "").strip()
-            u.last_name = (request.form.get("last_name") or "").strip()
-            u.username = (request.form.get("username") or "").strip().lower()
-            u.employee_id = (request.form.get("employee_id") or "").strip()
-            u.email = (request.form.get("email") or "").strip()
-            u.role = (request.form.get("role") or "Dietary Aide").strip()
-            db.session.commit()
-            return redirect(url_for("staff_list"))
-        values = {
-            "first_name": u.first_name or "",
-            "last_name": u.last_name or "",
-            "username": u.username or "",
-            "employee_id": u.employee_id or "",
-            "email": u.email or "",
-            "role": u.role or "Dietary Aide",
-        }
-        return render_template("staff_form.html", mode="edit", values=values, user_id=u.id)
-
-    @app.route("/staff/<int:uid>/delete", methods=["POST"])
-    @login_required
-    def staff_delete(uid):
-        if current_role() != "Manager":
-            flash("No access.", "error")
-            return redirect(url_for("dashboard"))
-        u = User.query.get_or_404(uid)
-        db.session.delete(u)
-        db.session.commit()
-        return redirect(url_for("staff_list"))
-
-    # ------------- INVENTORY -------------
+    # ---------- INVENTORY ----------
     INVENTORY_UNITS = [
         "kg", "g", "bags", "cases", "dozen", "cans", "liters", "jugs",
         "bunches", "heads", "loaves", "packs", "bottles", "jars", "boxes", "pcs"
@@ -357,11 +272,11 @@ def create_app():
             query = query.filter(InventoryItem.name.ilike(f"%{q}%"))
         rows = query.order_by(InventoryItem.name).all()
         items = []
-        for item in rows:
-            qty = item.quantity or 0.0
-            thr = item.low_stock_threshold or 0.0
-            is_low = qty <= thr if item.low_stock_threshold is not None else False
-            items.append({"obj": item, "is_low": is_low})
+        for it in rows:
+            qty = it.quantity or 0.0
+            thr = it.low_stock_threshold or 0.0
+            is_low = (qty <= thr) if it.low_stock_threshold is not None else False
+            items.append({"obj": it, "is_low": is_low})
         if show == "low":
             items = [x for x in items if x["is_low"]]
         return render_template("inventory_list.html", items=items, q=q, show=show)
@@ -411,25 +326,43 @@ def create_app():
             return redirect(url_for("inventory_list"))
         return render_template("inventory_form.html", mode="edit", values=it, item_id=item_id, units=INVENTORY_UNITS, limited=limited)
 
-    @app.route("/inventory/<int:item_id>/delete", methods=["POST"])
+    # this is the one your inventory_list.html was calling
+    @app.route("/inventory/<int:iid>/bump", methods=["POST"])
     @login_required
-    def inventory_delete(item_id):
-        if current_role() not in ("Manager", "Cook"):
-            flash("No access.", "error")
-            return redirect(url_for("inventory_list"))
-        it = InventoryItem.query.get_or_404(item_id)
-        db.session.delete(it)
+    def inventory_bump(iid):
+        delta = _to_float(request.form.get("delta"), 0.0)
+        it = InventoryItem.query.get_or_404(iid)
+        it.quantity = (it.quantity or 0.0) + delta
         db.session.commit()
-        return redirect(url_for("inventory_list"))
+        # preserve filters
+        q = request.args.get("q") or ""
+        show = request.args.get("show") or "all"
+        return redirect(url_for("inventory_list", q=q, show=show))
 
-    # ------------- MENU HUB -------------
+    # ---------- MENU ----------
     @app.route("/menu")
     @login_required
     def menu_hub():
-        # we just show the page; your templates can link to builder/scheduler
         return render_template("menu_hub.html")
 
-    # ------------- HEALTH -------------
+    # your menu_hub.html links to these, so give them routes
+    @app.route("/menu/builder")
+    @login_required
+    def menu_builder():
+        return render_template("menu_builder.html")
+
+    @app.route("/menu/scheduler")
+    @login_required
+    def menu_scheduler():
+        return render_template("menu_scheduler.html")
+
+    @app.route("/menu/planned")
+    @login_required
+    def planned_menus():
+        # your uploaded template name was planned_menu_week.html
+        return render_template("planned_menu_week.html")
+
+    # ---------- health ----------
     @app.route("/healthz")
     def healthz():
         return "ok", 200
@@ -437,20 +370,21 @@ def create_app():
     return app
 
 
-# ------------ create app & seed manager ------------
+# ---------- app entry ----------
 app = create_app()
 with app.app_context():
+    # seed a manager if DB empty
     if not User.query.first():
-        mgr = User(
+        m = User(
             username="manager",
             employee_id="00000000",
             email="manager@example.com",
             role="Manager",
         )
-        mgr.set_password("1234")
-        db.session.add(mgr)
+        m.set_password("1234")
+        db.session.add(m)
         db.session.commit()
-        print("Seeded: manager / 1234")
+        print("Seeded manager / 1234")
 
 
 if __name__ == "__main__":
