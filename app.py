@@ -1,61 +1,21 @@
-# app.py — MealMind / Flask app (final merged + fixed)
-# - Local login (form) by default
-# - Optional Auth0 login if env vars + authlib available
-# - Residents, Inventory, Menu (legacy + builder + scheduler + planned), Staff
-# - Forgot password + simple MFA (TOTP)
-#
-# Required App Service settings (or .env for local):
-#   SECRET_KEY
-#   SQLALCHEMY_DATABASE_URI (e.g., sqlite:////home/site/data/app.db)
-#   SQLALCHEMY_TRACK_MODIFICATIONS=False
-#
-# Optional:
-#   AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET
-#   SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_USE_TLS=1
-
+# app.py — MealMind (simplified / Azure-safe)
 import os
-import io
-import csv
+from datetime import datetime, date
 from functools import wraps
-from datetime import datetime, timedelta, date
-from collections import defaultdict
-
-from werkzeug.security import check_password_hash
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
     session, flash, jsonify
 )
-from sqlalchemy import or_, func, inspect, text
+from sqlalchemy import or_
 
-# try to load .env locally
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
-
-# optional auth0 (don't break if not installed)
-try:
-    from authlib.integrations.flask_client import OAuth
-except Exception:
-    OAuth = None
-
-# optional CSRF-exempt fallback
-try:
-    from flask_wtf.csrf import csrf_exempt  # noqa
-except Exception:
-    def csrf_exempt(f):  # type: ignore
-        return f
-
-# ---------- models ----------
 from models import (
     db, User, Resident, InventoryItem,
     Menu, MenuIngredient, MenuSchedule, MenuScheduleItem
 )
 
-# ---------- helpers ----------
+
+# ------------ small helpers ------------
 def _parse_date(s):
     if not s:
         return None
@@ -67,11 +27,13 @@ def _parse_date(s):
             continue
     return None
 
+
 def _calc_age(bday):
     if not bday:
         return None
-    t = date.today()
-    return t.year - bday.year - ((t.month, t.day) < (bday.month, bday.day))
+    today = date.today()
+    return today.year - bday.year - ((today.month, today.day) < (bday.month, bday.day))
+
 
 def _to_float(v, default=0.0):
     try:
@@ -79,436 +41,116 @@ def _to_float(v, default=0.0):
     except Exception:
         return default
 
-def model_has_column(model, name):
-    try:
-        return hasattr(model, "__table__") and name in model.__table__.c.keys()
-    except Exception:
-        return False
 
-def _reset_signer(secret_key: str):
-    return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
-
-def make_reset_token(secret_key: str, user_id: int, email: str) -> str:
-    return _reset_signer(secret_key).dumps({"uid": user_id, "email": email})
-
-def load_reset_token(secret_key: str, token: str, max_age_sec: int = 1800):
-    return _reset_signer(secret_key).loads(token, max_age=max_age_sec)
-
-def _verify_password(stored: str, provided: str) -> bool:
-    """
-    Accept either a werkzeug hash or a plain-text stored password.
-    This lets 'manager' continue to work even if DB has not been migrated.
-    """
-    if stored is None:
-        return False
-    try:
-        if stored.startswith(("pbkdf2:", "scrypt:", "argon2:")):
-            return check_password_hash(stored, provided)
-    except Exception:
-        pass
-    return stored == provided
-
-# MFA helpers
-import pyotp
-
-def totp_from_secret(secret: str) -> pyotp.TOTP | None:
-    return pyotp.TOTP(secret) if secret else None
-
-def make_new_mfa_secret() -> str:
-    return pyotp.random_base32()
-
-def provisioning_uri(secret: str, username: str, issuer: str = "MealMind"):
-    return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer)
-
-def send_email(to_addr: str, subject: str, body: str):
-    import smtplib
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT") or 0)
-    user = os.getenv("SMTP_USERNAME")
-    pwd = os.getenv("SMTP_PASSWORD")
-    use_tls = os.getenv("SMTP_USE_TLS") == "1"
-
-    if not host or not port:
-        # dev / demo mode — just print to console
-        print("\n=== Simulated email ===")
-        print(f"TO: {to_addr}\nSUBJECT: {subject}\n\n{body}")
-        print("=======================\n")
-        return
-
-    from email.message import EmailMessage
-    msg = EmailMessage()
-    msg["From"] = user or "no-reply@mealmind.local"
-    msg["To"] = to_addr
-    msg["Subject"] = subject
-    msg.set_content(body)
-
-    with smtplib.SMTP(host, port) as s:
-        if use_tls:
-            s.starttls()
-        if user and pwd:
-            s.login(user, pwd)
-        s.send_message(msg)
-
-# ----- safe column add helpers -----
-def _ensure_user_columns(app, db_):
-    """Create missing MFA columns safely if they don't exist."""
-    with app.app_context():
-        insp = inspect(db_.engine)
-        if "user" not in insp.get_table_names():
-            return
-        cols = {c['name'] for c in insp.get_columns('user')}
-        stmts = []
-        if 'mfa_enabled' not in cols:
-            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0"))
-        if 'mfa_secret' not in cols:
-            stmts.append(text("ALTER TABLE user ADD COLUMN mfa_secret VARCHAR(32)"))
-        if stmts:
-            with db_.engine.begin() as conn:
-                for s in stmts:
-                    conn.execute(s)
-
-def _ensure_legacy_auth_columns(app, db_):
-    # tolerate earlier drafts
-    with app.app_context():
-        try:
-            with db_.engine.begin() as con:
-                try:
-                    con.exec_driver_sql("ALTER TABLE user ADD COLUMN totp_secret VARCHAR(64)")
-                except Exception:
-                    pass
-                try:
-                    con.exec_driver_sql("ALTER TABLE user ADD COLUMN mfa_enabled BOOLEAN")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
+# ------------ app factory ------------
 def create_app():
     app = Flask(__name__)
 
-    # ---- figure out where to put the SQLite file ----
-    # 1) If Azure env sets SQLALCHEMY_DATABASE_URI, use it
-    # 2) otherwise, use /home/site/wwwroot/app.db (Azure-writable)
-    # 3) otherwise, local ./instance/app.db for local dev
+    # 1) if Azure gave us a URI, use it and create the folder
     env_uri = os.getenv("SQLALCHEMY_DATABASE_URI") or os.getenv("DATABASE_URL")
-
     if env_uri and env_uri.startswith("sqlite:///"):
-        # e.g. sqlite:////home/site/data/app.db  OR sqlite:////home/site/wwwroot/app.db
         db_path = env_uri.replace("sqlite:///", "")
-        db_dir = os.path.dirname(db_path)
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
+        folder = os.path.dirname(db_path)
+        if folder and not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
         db_uri = env_uri
     else:
-        # prefer Azure-friendly path
+        # 2) Azure Linux writable path
         azure_dir = "/home/site/wwwroot"
         if os.path.exists(azure_dir):
             os.makedirs(azure_dir, exist_ok=True)
             db_uri = "sqlite:///" + os.path.join(azure_dir, "app.db")
         else:
-            # local fallback
-            instance_dir = os.path.join(os.getcwd(), "instance")
-            os.makedirs(instance_dir, exist_ok=True)
-            db_uri = "sqlite:///" + os.path.join(instance_dir, "app.db")
+            # 3) local dev fallback
+            inst = os.path.join(os.getcwd(), "instance")
+            os.makedirs(inst, exist_ok=True)
+            db_uri = "sqlite:///" + os.path.join(inst, "app.db")
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = (
-        os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
-    )
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
-    app.config["TEMPLATES_AUTO_RELOAD"] = True
-    app.jinja_env.auto_reload = True
 
-    # optional Auth0
-    AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
-    AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
-    AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
-    auth0 = None
-    if OAuth and AUTH0_DOMAIN and AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET:
-        oauth = OAuth(app)
-        auth0 = oauth.register(
-            "auth0",
-            client_id=AUTH0_CLIENT_ID,
-            client_secret=AUTH0_CLIENT_SECRET,
-            client_kwargs={"scope": "openid profile email"},
-            server_metadata_url=f"https://{AUTH0_DOMAIN}/.well-known/openid-configuration",
-        )
-
-    # init DB
     db.init_app(app)
     with app.app_context():
         db.create_all()
-        _ensure_user_columns(app, db)
-        _ensure_legacy_auth_columns(app, db)
 
-    # make helper available to routes below
+    # make calc_age available to templates
     app.jinja_env.globals["age"] = _calc_age
 
-    # store auth0 object on app so routes can reach it
-    app.auth0 = auth0
-
-    # (the rest of your routes stay the same…)
-    # return app at the very end of the big function
-    # ...
-    return app
-
-
-    # helper in Jinja
-    app.jinja_env.globals["age"] = _calc_age
-
-    INVENTORY_UNITS = [
-        "kg", "g", "bags", "cases", "dozen", "cans", "liters", "jugs",
-        "bunches", "heads", "loaves", "packs", "bottles", "jars", "boxes", "pcs"
-    ]
-
+    # ------------- helpers for routes -------------
     @app.context_processor
-    def inject_current_user():
+    def inject_user():
         return {"current_user": session.get("user")}
 
-    # ------------- auth/session helpers -------------
     def login_required(f):
         @wraps(f)
-        def w(*a, **kw):
+        def wrapper(*args, **kwargs):
             if "user" not in session:
                 return redirect(url_for("login"))
-            return f(*a, **kw)
-        return w
-
-    def _finalize_login(user):
-        session["user"] = {
-            "id": user.id,
-            "username": user.username,
-            "role": user.role,
-            "first_name": getattr(user, "first_name", "") or "",
-            "last_name": getattr(user, "last_name", "") or "",
-            "mfa_enabled": bool(getattr(user, "mfa_secret", None)),
-            "mfa_verified": False,
-            "must_change_password": bool(getattr(user, "must_change_password", False)),
-        }
-
-    def login_user(user):
-        _finalize_login(user)
-        # force PW change?
-        if session["user"].get("must_change_password"):
-            return redirect(url_for("change_password"))
-        # force MFA?
-        if session["user"].get("mfa_enabled") and not session["user"].get("mfa_verified"):
-            # we set this so /mfa knows who to check
-            session["pre_2fa_uid"] = user.id
-            return redirect(url_for("mfa_verify"))
-        return redirect(url_for("dashboard"))
+            return f(*args, **kwargs)
+        return wrapper
 
     def current_role():
         return session.get("user", {}).get("role")
 
-    @app.before_request
-    def enforce_pw_change():
-        # allow these even if password must change
-        allowed = {"login", "logout", "change_password", "static", "healthz", "forgot_password", "reset_password", "home", "index"}
-        u = session.get("user")
-        if not u:
-            return
-        obj = User.query.get(u["id"])
-        if obj and getattr(obj, "must_change_password", False):
-            if request.endpoint not in allowed:
-                return redirect(url_for("change_password"))
-
-    # ------------- ROUTES: basic / auth -------------
+    # ------------- AUTH -------------
     @app.route("/")
     def home():
-        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
-
-    @app.route("/index")
-    def index():
-        # legacy name some links used
-        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
+        if "user" in session:
+            return redirect(url_for("dashboard"))
+        return redirect(url_for("login"))
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
-        # if Auth0 configured, go through Auth0
-        if auth0 and request.method == "GET":
-            return auth0.authorize_redirect(
-                redirect_uri=url_for("callback", _external=True)
-            )
-
-        # local form login (default)
         if request.method == "POST":
             username = (request.form.get("username") or "").strip().lower()
             password = (request.form.get("password") or "").strip()
+
             user = User.query.filter(
                 or_(User.username.ilike(username), User.employee_id.ilike(username))
             ).first()
 
-            stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
-            if user and _verify_password(stored, password):
-                # if user has MFA, set pre_2fa_uid
-                if getattr(user, "mfa_secret", None):
-                    session["pre_2fa_uid"] = user.id
-                    return redirect(url_for("mfa_verify"))
-                return login_user(user)
+            # we allow password_hash or legacy "password" field
+            stored = None
+            if user:
+                stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
+
+            ok = False
+            if user and stored:
+                # try werkzeug hash first
+                from werkzeug.security import check_password_hash
+                try:
+                    ok = check_password_hash(stored, password)
+                except Exception:
+                    ok = stored == password
+
+            if user and ok:
+                session["user"] = {
+                    "id": user.id,
+                    "username": user.username,
+                    "role": user.role,
+                    "first_name": user.first_name or "",
+                    "last_name": user.last_name or "",
+                }
+                return redirect(url_for("dashboard"))
 
             flash("Invalid credentials.", "error")
-        return render_template("login.html")
 
-    # Auth0 callback (only if we set it up)
-    if OAuth:
-        @app.route("/callback")
-        def callback():
-            if not (OAuth and auth0):
-                return redirect(url_for("login"))
-            token = auth0.authorize_access_token()
-            userinfo = token["userinfo"]
-            # minimal session for auth0
-            session["user"] = {
-                "id": userinfo.get("sub"),
-                "username": userinfo.get("email"),
-                "role": "Manager",  # or decide some default
-                "first_name": userinfo.get("name", ""),
-                "last_name": "",
-                "mfa_enabled": False,
-                "mfa_verified": True,
-                "must_change_password": False,
-            }
-            return redirect(url_for("dashboard"))
+        return render_template("login.html")
 
     @app.route("/logout")
     def logout():
-        # local logout
         session.clear()
-        # if we had auth0 and want to hit their logout, we could,
-        # but to keep it simple we just go to login
         return redirect(url_for("login"))
 
+    # ------------- DASHBOARD -------------
     @app.route("/dashboard")
     @login_required
     def dashboard():
         user = session.get("user", {})
         return render_template("dashboard.html", user=user)
 
-    # ------------- change password -------------
-    @app.route("/change-password", methods=["GET", "POST"])
-    @login_required
-    def change_password():
-        uinfo = session.get("user")
-        user = User.query.get_or_404(uinfo["id"])
-        error = None
-        if request.method == "POST":
-            new = (request.form.get("new_password") or "")
-            cfm = (request.form.get("confirm_password") or "")
-            if new != cfm:
-                error = "Passwords do not match."
-            elif len(new) < 8:
-                error = "Password must be at least 8 characters."
-            else:
-                user.set_password(new)
-                user.must_change_password = False
-                db.session.commit()
-                flash("Password updated.", "success")
-                return redirect(url_for("dashboard"))
-        return render_template("change_password.html", error=error)
-
-    # ------------- Forgot / Reset password -------------
-    @app.route("/forgot", methods=["GET", "POST"])
-    def forgot_password():
-        if request.method == "POST":
-            email = (request.form.get("email") or "").strip().lower()
-            user = User.query.filter_by(email=email).first()
-            if user:
-                token = make_reset_token(app.config["SECRET_KEY"], user.id, user.email)
-                reset_url = url_for("reset_password", token=token, _external=True)
-                body = (
-                    "You requested a MealMind password reset.\n\n"
-                    f"Click this link within 30 minutes:\n{reset_url}\n\n"
-                    "If you did not request this, you can ignore this email."
-                )
-                send_email(user.email, "MealMind password reset", body)
-            flash("If that email exists, we've sent a reset link.", "info")
-            return redirect(url_for("login"))
-        return render_template("forgot.html")
-
-    @app.route("/reset/<token>", methods=["GET", "POST"])
-    def reset_password(token):
-        try:
-            data = load_reset_token(app.config["SECRET_KEY"], token, max_age_sec=1800)
-        except SignatureExpired:
-            flash("Reset link expired. Please try again.", "error")
-            return redirect(url_for("forgot_password"))
-        except BadSignature:
-            flash("Invalid reset link.", "error")
-            return redirect(url_for("forgot_password"))
-
-        user = User.query.get(data.get("uid"))
-        if not user or user.email.lower() != data.get("email", "").lower():
-            flash("Invalid reset link.", "error")
-            return redirect(url_for("forgot_password"))
-
-        if request.method == "POST":
-            p1 = request.form.get("password") or ""
-            p2 = request.form.get("confirm") or ""
-            if len(p1) < 8:
-                flash("Password must be at least 8 characters.", "error")
-            elif p1 != p2:
-                flash("Passwords do not match.", "error")
-            else:
-                user.set_password(p1)
-                db.session.commit()
-                flash("Password updated. You can sign in now.", "success")
-                return redirect(url_for("login"))
-        return render_template("reset.html")
-
-    # ------------- MFA -------------
-    @app.route("/mfa/setup", methods=["GET", "POST"])
-    @login_required
-    def mfa_setup():
-        user = User.query.get(session["user"]["id"])
-        if not getattr(user, "mfa_secret", None):
-            user.mfa_secret = make_new_mfa_secret()
-            db.session.commit()
-
-        otp_uri = provisioning_uri(user.mfa_secret, username=user.username, issuer="MealMind")
-
-        if request.method == "POST":
-            code = (request.form.get("code") or "").strip()
-            if totp_from_secret(user.mfa_secret).verify(code, valid_window=1):
-                user.mfa_enabled = True
-                db.session.commit()
-                flash("Multi-factor authentication enabled.", "success")
-                return redirect(url_for("dashboard"))
-            else:
-                flash("Invalid code. Try again.", "error")
-
-        return render_template("mfa_setup.html", secret=user.mfa_secret, otp_uri=otp_uri)
-
-    @app.route("/mfa", methods=["GET", "POST"])
-    def mfa_verify():
-        uid = session.get("pre_2fa_uid")
-        if not uid:
-            return redirect(url_for("login"))
-        user = User.query.get(uid)
-        if not user:
-            return redirect(url_for("login"))
-
-        if request.method == "POST":
-            code = (request.form.get("code") or "").strip()
-            if user.mfa_secret and totp_from_secret(user.mfa_secret).verify(code, valid_window=1):
-                # mark MFA verified
-                session["user"] = {
-                    **session.get("user", {}),
-                    "id": user.id,
-                    "username": user.username,
-                    "role": user.role,
-                    "mfa_enabled": True,
-                    "mfa_verified": True,
-                }
-                session.pop("pre_2fa_uid", None)
-                return redirect(url_for("dashboard"))
-            flash("Invalid code.", "error")
-
-        return render_template("mfa_verify.html")
-
-    # ======================================================================
-    # RESIDENTS
-    # ======================================================================
+    # ------------- RESIDENTS -------------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -516,57 +158,54 @@ def create_app():
         query = Resident.query
         if q:
             like = f"%{q}%"
-            filters = []
-            if hasattr(Resident, "first_name"):  filters.append(Resident.first_name.ilike(like))
-            if hasattr(Resident, "last_name"):   filters.append(Resident.last_name.ilike(like))
-            if hasattr(Resident, "diet"):        filters.append(Resident.diet.ilike(like))
-            if hasattr(Resident, "allergies"):   filters.append(Resident.allergies.ilike(like))
-            if hasattr(Resident, "illnesses"):   filters.append(Resident.illnesses.ilike(like))
-            if hasattr(Resident, "medications"): filters.append(Resident.medications.ilike(like))
-            if hasattr(Resident, "fluids"):      filters.append(Resident.fluids.ilike(like))
-            if filters:
-                query = query.filter(or_(*filters))
-        residents = query.order_by(
-            getattr(Resident, "last_name", Resident.id),
-            getattr(Resident, "first_name", Resident.id),
-        ).all()
+            query = query.filter(
+                or_(
+                    Resident.first_name.ilike(like),
+                    Resident.last_name.ilike(like),
+                    Resident.diet.ilike(like),
+                    Resident.allergies.ilike(like),
+                    Resident.illnesses.ilike(like),
+                )
+            )
+        residents = query.order_by(Resident.last_name, Resident.first_name).all()
         return render_template("residents_list.html", residents=residents, q=q)
 
     @app.route("/residents/new", methods=["GET", "POST"])
     @login_required
     def residents_new():
         if current_role() not in ("Manager", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
+            flash("No access.", "error")
+            return redirect(url_for("residents_list"))
 
         if request.method == "POST":
             first_name = (request.form.get("first_name") or "").strip()
-            last_name  = (request.form.get("last_name") or "").strip()
-            birthday   = _parse_date(request.form.get("birthday"))
-            diet       = (request.form.get("diet") or "").strip()
-            allergies  = (request.form.get("allergies") or "").strip()
-            illnesses  = (request.form.get("illnesses") or "").strip()
-            meds       = (request.form.get("medications") or "").strip()
-            fluids     = (request.form.get("fluids") or "").strip()
-            notes      = (request.form.get("notes") or "").strip()
+            last_name = (request.form.get("last_name") or "").strip()
+            birthday = _parse_date(request.form.get("birthday"))
+            diet = (request.form.get("diet") or "").strip()
+            allergies = (request.form.get("allergies") or "").strip()
+            illnesses = (request.form.get("illnesses") or "").strip()
+            medications = (request.form.get("medications") or "").strip()
+            fluids = (request.form.get("fluids") or "").strip()
+            notes = (request.form.get("notes") or "").strip()
 
-            errors = []
-            if not first_name: errors.append("First name is required.")
-            if not last_name:  errors.append("Last name is required.")
-            if not birthday:   errors.append("Birthday is required.")
-            if errors:
-                return render_template("residents_form.html", mode="new", values=request.form, errors=errors)
+            if not first_name or not last_name or not birthday:
+                flash("First name, last name, and birthday are required.", "error")
+                return render_template("residents_form.html", mode="new", values=request.form)
 
             r = Resident(
-                first_name=first_name, last_name=last_name, birthday=birthday,
-                diet=diet, allergies=allergies, illnesses=illnesses,
-                medications=meds, fluids=fluids, notes=notes
+                first_name=first_name,
+                last_name=last_name,
+                birthday=birthday,
+                diet=diet,
+                allergies=allergies,
+                illnesses=illnesses,
+                medications=medications,
+                fluids=fluids,
+                notes=notes,
             )
-            if model_has_column(Resident, "age") and birthday:
-                r.age = _calc_age(birthday)
+            r.age = _calc_age(birthday)
             db.session.add(r)
             db.session.commit()
-            flash("Resident created.", "success")
             return redirect(url_for("residents_list"))
 
         return render_template("residents_form.html", mode="new", values={})
@@ -575,211 +214,142 @@ def create_app():
     @login_required
     def residents_edit(rid):
         if current_role() not in ("Manager", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
+            flash("No access.", "error")
+            return redirect(url_for("residents_list"))
+
         r = Resident.query.get_or_404(rid)
+
         if request.method == "POST":
-            first_name = (request.form.get("first_name") or "").strip()
-            last_name  = (request.form.get("last_name") or "").strip()
-            birthday   = _parse_date(request.form.get("birthday"))
-            diet       = (request.form.get("diet") or "").strip()
-            allergies  = (request.form.get("allergies") or "").strip()
-            illnesses  = (request.form.get("illnesses") or "").strip()
-            meds       = (request.form.get("medications") or "").strip()
-            fluids     = (request.form.get("fluids") or "").strip()
-            notes      = (request.form.get("notes") or "").strip()
-
-            errors = []
-            if not first_name: errors.append("First name is required.")
-            if not last_name:  errors.append("Last name is required.")
-            if not birthday:   errors.append("Birthday is required.")
-            if errors:
-                return render_template("residents_form.html", mode="edit", values=request.form, rid=rid, errors=errors)
-
-            r.first_name = first_name
-            r.last_name  = last_name
-            r.birthday   = birthday
-            r.diet       = diet
-            r.allergies  = allergies
-            r.illnesses  = illnesses
-            r.medications = meds
-            r.fluids     = fluids
-            r.notes      = notes
-            if model_has_column(Resident, "age") and birthday:
-                r.age = _calc_age(birthday)
+            r.first_name = (request.form.get("first_name") or "").strip()
+            r.last_name = (request.form.get("last_name") or "").strip()
+            r.birthday = _parse_date(request.form.get("birthday"))
+            r.diet = (request.form.get("diet") or "").strip()
+            r.allergies = (request.form.get("allergies") or "").strip()
+            r.illnesses = (request.form.get("illnesses") or "").strip()
+            r.medications = (request.form.get("medications") or "").strip()
+            r.fluids = (request.form.get("fluids") or "").strip()
+            r.notes = (request.form.get("notes") or "").strip()
+            if r.birthday:
+                r.age = _calc_age(r.birthday)
             db.session.commit()
-            flash("Resident updated.", "success")
             return redirect(url_for("residents_list"))
 
         values = {
-            "first_name":  r.first_name or "",
-            "last_name":   r.last_name or "",
-            "birthday":    r.birthday.strftime("%Y-%m-%d") if r.birthday else "",
-            "diet":        r.diet or "",
-            "allergies":   r.allergies or "",
-            "illnesses":   r.illnesses or "",
+            "first_name": r.first_name,
+            "last_name": r.last_name,
+            "birthday": r.birthday.strftime("%Y-%m-%d") if r.birthday else "",
+            "diet": r.diet or "",
+            "allergies": r.allergies or "",
+            "illnesses": r.illnesses or "",
             "medications": r.medications or "",
-            "fluids":      r.fluids or "",
-            "notes":       r.notes or "",
+            "fluids": r.fluids or "",
+            "notes": r.notes or "",
         }
         return render_template("residents_form.html", mode="edit", values=values, rid=r.id)
-
-    @app.route("/residents/<int:rid>/delete", methods=["POST"])
-    @login_required
-    def residents_delete(rid):
-        if current_role() not in ("Manager", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-        r = Resident.query.get_or_404(rid)
-        db.session.delete(r)
-        db.session.commit()
-        flash("Resident deleted.", "success")
-        return redirect(url_for("residents_list"))
 
     @app.route("/resident/<int:rid>/print")
     @login_required
     def resident_print(rid):
         r = Resident.query.get_or_404(rid)
-        auto = bool(request.args.get("auto"))
-        return render_template("resident_print.html", r=r, auto_print=auto)
+        return render_template("resident_print.html", r=r)
 
-    # ======================================================================
-    # STAFF (Manager only)
-    # ======================================================================
+    # ------------- STAFF (manager) -------------
     @app.route("/staff")
     @login_required
     def staff_list():
         if current_role() != "Manager":
-            flash("You do not have access to that page.", "error")
+            flash("No access.", "error")
             return redirect(url_for("dashboard"))
-        q = (request.args.get("q") or "").strip()
-        role_filter = (request.args.get("role") or "all").strip()
-        query = User.query
-        if role_filter != "all":
-            query = query.filter(User.role == role_filter)
-        if q:
-            like = f"%{q}%"
-            query = query.filter(or_(
-                User.first_name.ilike(like),
-                User.last_name.ilike(like),
-                User.username.ilike(like),
-                User.employee_id.ilike(like),
-                User.email.ilike(like),
-            ))
-        users = query.order_by(User.last_name, User.first_name, User.username).all()
-        return render_template("staff_list.html", users=users, roles=["Manager","Cook","Dietitian","Dietary Aide"], role_filter=role_filter, q=q)
+        users = User.query.order_by(User.last_name, User.first_name).all()
+        return render_template("staff_list.html", users=users)
 
     @app.route("/staff/new", methods=["GET", "POST"])
     @login_required
     def staff_new():
         if current_role() != "Manager":
-            flash("You do not have access to that page.", "error")
+            flash("No access.", "error")
             return redirect(url_for("dashboard"))
 
         if request.method == "POST":
-            first_name  = (request.form.get("first_name")  or "").strip()
-            last_name   = (request.form.get("last_name")   or "").strip()
-            username    = (request.form.get("username")    or "").strip().lower()
+            first_name = (request.form.get("first_name") or "").strip()
+            last_name = (request.form.get("last_name") or "").strip()
+            username = (request.form.get("username") or "").strip().lower()
             employee_id = (request.form.get("employee_id") or "").strip()
-            email       = (request.form.get("email")       or "").strip()
-            role        = (request.form.get("role")        or "Dietary Aide").strip()
-            temp_pw     = (request.form.get("temp_password") or "").strip()
+            email = (request.form.get("email") or "").strip()
+            role = (request.form.get("role") or "Dietary Aide").strip()
+            temp_pw = (request.form.get("temp_password") or "").strip()
 
-            errors = []
-            if not username:    errors.append("Username is required.")
-            if not employee_id: errors.append("Employee ID is required.")
-            if not temp_pw:     errors.append("Temporary password is required.")
+            if not username or not employee_id or not temp_pw:
+                flash("Username, employee ID, and temp password are required.", "error")
+                return render_template("staff_form.html", mode="new", values=request.form)
+
             if User.query.filter(
                 or_(User.username.ilike(username), User.employee_id.ilike(employee_id))
             ).first():
-                errors.append("Username or Employee ID already exists.")
-
-            if errors:
-                return render_template("staff_form.html", mode="new", values=request.form, roles=["Manager","Cook","Dietitian","Dietary Aide"], errors=errors)
+                flash("User with that username or employee ID already exists.", "error")
+                return render_template("staff_form.html", mode="new", values=request.form)
 
             u = User(
-                first_name=first_name, last_name=last_name, username=username,
-                employee_id=employee_id, email=email, role=role, must_change_password=True,
+                first_name=first_name,
+                last_name=last_name,
+                username=username,
+                employee_id=employee_id,
+                email=email,
+                role=role,
             )
             u.set_password(temp_pw)
             db.session.add(u)
             db.session.commit()
             return redirect(url_for("staff_list"))
 
-        return render_template("staff_form.html", mode="new", values={}, roles=["Manager","Cook","Dietitian","Dietary Aide"])
+        return render_template("staff_form.html", mode="new", values={})
 
     @app.route("/staff/<int:uid>/edit", methods=["GET", "POST"])
     @login_required
     def staff_edit(uid):
         if current_role() != "Manager":
-            flash("You do not have access to that page.", "error")
+            flash("No access.", "error")
             return redirect(url_for("dashboard"))
-
         u = User.query.get_or_404(uid)
         if request.method == "POST":
-            first_name  = (request.form.get("first_name")  or "").strip()
-            last_name   = (request.form.get("last_name")   or "").strip()
-            username    = (request.form.get("username")    or "").strip().lower()
-            employee_id = (request.form.get("employee_id") or "").strip()
-            email       = (request.form.get("email")       or "").strip()
-            role        = (request.form.get("role")        or "Dietary Aide").strip()
-
-            errors = []
-            if not username:    errors.append("Username is required.")
-            if not employee_id: errors.append("Employee ID is required.")
-            dup = User.query.filter(
-                User.id != u.id,
-                or_(User.username.ilike(username), User.employee_id.ilike(employee_id))
-            ).first()
-            if dup:
-                errors.append("Another user already has that username or employee ID.")
-
-            if errors:
-                return render_template("staff_form.html", mode="edit", values=request.form, roles=["Manager","Cook","Dietitian","Dietary Aide"], errors=errors, user_id=u.id)
-
-            u.first_name  = first_name
-            u.last_name   = last_name
-            u.username    = username
-            u.employee_id = employee_id
-            u.email       = email
-            u.role        = role
+            u.first_name = (request.form.get("first_name") or "").strip()
+            u.last_name = (request.form.get("last_name") or "").strip()
+            u.username = (request.form.get("username") or "").strip().lower()
+            u.employee_id = (request.form.get("employee_id") or "").strip()
+            u.email = (request.form.get("email") or "").strip()
+            u.role = (request.form.get("role") or "Dietary Aide").strip()
             db.session.commit()
             return redirect(url_for("staff_list"))
-
         values = {
-            "first_name":  u.first_name  or "",
-            "last_name":   u.last_name   or "",
-            "username":    u.username    or "",
+            "first_name": u.first_name or "",
+            "last_name": u.last_name or "",
+            "username": u.username or "",
             "employee_id": u.employee_id or "",
-            "email":       u.email       or "",
-            "role":        u.role        or "Dietary Aide",
+            "email": u.email or "",
+            "role": u.role or "Dietary Aide",
         }
-        return render_template("staff_form.html", mode="edit", values=values, roles=["Manager","Cook","Dietitian","Dietary Aide"], user_id=u.id)
+        return render_template("staff_form.html", mode="edit", values=values, user_id=u.id)
 
     @app.route("/staff/<int:uid>/delete", methods=["POST"])
     @login_required
     def staff_delete(uid):
         if current_role() != "Manager":
-            flash("You do not have access to that page.", "error")
+            flash("No access.", "error")
             return redirect(url_for("dashboard"))
         u = User.query.get_or_404(uid)
-        if session.get("user", {}).get("id") == u.id:
-            flash("You cannot delete your own account.", "error")
-            return redirect(url_for("staff_list"))
         db.session.delete(u)
         db.session.commit()
         return redirect(url_for("staff_list"))
 
-    # ======================================================================
-    # INVENTORY
-    # ======================================================================
+    # ------------- INVENTORY -------------
+    INVENTORY_UNITS = [
+        "kg", "g", "bags", "cases", "dozen", "cans", "liters", "jugs",
+        "bunches", "heads", "loaves", "packs", "bottles", "jars", "boxes", "pcs"
+    ]
+
     @app.route("/inventory")
     @login_required
     def inventory_list():
-        if current_role() not in ("Manager", "Cook", "Dietary Aide"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
         q = (request.args.get("q") or "").strip()
         show = (request.args.get("show") or "all").strip()
         query = InventoryItem.query
@@ -787,11 +357,11 @@ def create_app():
             query = query.filter(InventoryItem.name.ilike(f"%{q}%"))
         rows = query.order_by(InventoryItem.name).all()
         items = []
-        for obj in rows:
-            qty = obj.quantity or 0.0
-            low = obj.low_stock_threshold or 0.0
-            is_low = (qty <= low) if (obj.low_stock_threshold is not None) else False
-            items.append({"obj": obj, "is_low": is_low})
+        for item in rows:
+            qty = item.quantity or 0.0
+            thr = item.low_stock_threshold or 0.0
+            is_low = qty <= thr if item.low_stock_threshold is not None else False
+            items.append({"obj": item, "is_low": is_low})
         if show == "low":
             items = [x for x in items if x["is_low"]]
         return render_template("inventory_list.html", items=items, q=q, show=show)
@@ -800,638 +370,66 @@ def create_app():
     @login_required
     def inventory_new():
         if current_role() not in ("Manager", "Cook"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
+            flash("No access.", "error")
+            return redirect(url_for("inventory_list"))
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
             unit = (request.form.get("unit") or "").strip()
-            qty  = _to_float(request.form.get("quantity"), 0.0)
-            low  = _to_float(request.form.get("low_stock_threshold"), 0.0)
-
-            errors = []
-            if not name: errors.append("Item name is required.")
-            if unit not in INVENTORY_UNITS: errors.append("Select a valid unit.")
-            if InventoryItem.query.filter(
-                InventoryItem.name.ilike(name), InventoryItem.unit.ilike(unit)
-            ).first():
-                errors.append("That item (name & unit) already exists.")
-
-            if errors:
-                return render_template("inventory_form.html", mode="new", values=request.form,
-                                       units=INVENTORY_UNITS, errors=errors, limited=False)
-
+            qty = _to_float(request.form.get("quantity"), 0.0)
+            low = _to_float(request.form.get("low_stock_threshold"), 0.0)
+            if not name or unit not in INVENTORY_UNITS:
+                flash("Name and valid unit required.", "error")
+                return render_template("inventory_form.html", mode="new", values=request.form, units=INVENTORY_UNITS, limited=False)
             it = InventoryItem(name=name, unit=unit, quantity=qty, low_stock_threshold=low)
             db.session.add(it)
             db.session.commit()
             return redirect(url_for("inventory_list"))
-
         return render_template("inventory_form.html", mode="new", values={}, units=INVENTORY_UNITS, limited=False)
 
-    @app.route("/inventory/<int:iid>/edit", methods=["GET", "POST"])
+    @app.route("/inventory/<int:item_id>/edit", methods=["GET", "POST"])
     @login_required
-    def inventory_edit(iid):
-        if current_role() not in ("Manager", "Cook", "Dietary Aide"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
-        it = InventoryItem.query.get_or_404(iid)
-        limited = (current_role() == "Dietary Aide")
-
+    def inventory_edit(item_id):
+        it = InventoryItem.query.get_or_404(item_id)
+        limited = current_role() == "Dietary Aide"
         if request.method == "POST":
-            qty  = _to_float(request.form.get("quantity"), 0.0)
-
+            qty = _to_float(request.form.get("quantity"), 0.0)
             if limited:
                 it.quantity = qty
                 db.session.commit()
-                flash("Quantity updated.", "success")
                 return redirect(url_for("inventory_list"))
-
             name = (request.form.get("name") or "").strip()
             unit = (request.form.get("unit") or "").strip()
-            low  = _to_float(request.form.get("low_stock_threshold"), 0.0)
-
-            errors = []
-            if not name: errors.append("Item name is required.")
-            if unit not in INVENTORY_UNITS: errors.append("Select a valid unit.")
-            dup = InventoryItem.query.filter(
-                InventoryItem.id != it.id,
-                InventoryItem.name.ilike(name),
-                InventoryItem.unit.ilike(unit)
-            ).first()
-            if dup:
-                errors.append("Another item with that name & unit exists.")
-
-            if errors:
-                return render_template("inventory_form.html", mode="edit", values=request.form,
-                                       item_id=it.id, units=INVENTORY_UNITS, errors=errors, limited=limited)
-
-            it.name, it.unit, it.quantity, it.low_stock_threshold = name, unit, qty, low
+            low = _to_float(request.form.get("low_stock_threshold"), 0.0)
+            if not name or unit not in INVENTORY_UNITS:
+                flash("Name and valid unit required.", "error")
+                return render_template("inventory_form.html", mode="edit", values=request.form, item_id=item_id, units=INVENTORY_UNITS, limited=limited)
+            it.name = name
+            it.unit = unit
+            it.quantity = qty
+            it.low_stock_threshold = low
             db.session.commit()
             return redirect(url_for("inventory_list"))
+        return render_template("inventory_form.html", mode="edit", values=it, item_id=item_id, units=INVENTORY_UNITS, limited=limited)
 
-        return render_template("inventory_form.html", mode="edit", values=it, item_id=it.id,
-                               units=INVENTORY_UNITS, limited=limited)
-
-    @app.route("/inventory/<int:iid>/delete", methods=["POST"])
+    @app.route("/inventory/<int:item_id>/delete", methods=["POST"])
     @login_required
-    def inventory_delete(iid):
+    def inventory_delete(item_id):
         if current_role() not in ("Manager", "Cook"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-        it = InventoryItem.query.get_or_404(iid)
+            flash("No access.", "error")
+            return redirect(url_for("inventory_list"))
+        it = InventoryItem.query.get_or_404(item_id)
         db.session.delete(it)
         db.session.commit()
         return redirect(url_for("inventory_list"))
 
-    @app.route("/inventory/export")
-    @app.route("/inventory/export.csv")
-    @login_required
-    def inventory_export():
-        q = (request.args.get("q") or "").strip()
-        status = (request.args.get("status") or "all").lower()
-
-        qry = InventoryItem.query
-        if q:
-            qry = qry.filter(InventoryItem.name.ilike(f"%{q}%"))
-
-        if status == "low":
-            qry = qry.filter(
-                func.coalesce(InventoryItem.quantity, 0) <= func.coalesce(InventoryItem.low_stock_threshold, 0)
-            )
-        elif status == "ok":
-            qry = qry.filter(
-                func.coalesce(InventoryItem.quantity, 0) > func.coalesce(InventoryItem.low_stock_threshold, 0)
-            )
-
-        items = qry.order_by(InventoryItem.name.asc()).all()
-
-        out = io.StringIO()
-        w = csv.writer(out)
-        w.writerow(["Item", "Unit", "Quantity", "Low Stock Threshold", "Status"])
-        for it in items:
-            qty = float(it.quantity or 0)
-            thr = float(it.low_stock_threshold or 0)
-            status_label = "LOW" if qty <= thr else "OK"
-            w.writerow([it.name, it.unit, qty, thr, status_label])
-
-        from flask import send_file as _send_file
-        mem = io.BytesIO(out.getvalue().encode("utf-8-sig"))
-        mem.seek(0)
-        filename = f"inventory_{status or 'all'}.csv"
-        return _send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
-
-    # ======================================================================
-    # Legacy one-day menu (keep)
-    # ======================================================================
-    @app.route("/menu/legacy", methods=["GET", "POST"])
-    @login_required
-    def menu_legacy():
-        try:
-            from models import MenuEntry, MenuIngredient as LegacyMenuIngredient
-        except Exception:
-            MenuEntry = LegacyMenuIngredient = None
-
-        day_str = request.args.get("day") or date.today().strftime("%Y-%m-%d")
-        day = _parse_date(day_str) or date.today()
-
-        role = session.get("user", {}).get("role")
-        can_edit = role in ("Manager",)
-        can_apply = role in ("Manager", "Cook")
-
-        entries = {}
-        if MenuEntry:
-            entries = {e.meal_type: e for e in MenuEntry.query.filter_by(day=day).all()}
-
-        if request.method == "POST" and can_edit and MenuEntry and LegacyMenuIngredient:
-            def _parse_menu_ingredients(lines):
-                out = []
-                for raw in (lines or "").splitlines():
-                    line = raw.strip()
-                    if not line:
-                        continue
-                    if ":" in line:
-                        name, rest = line.split(":", 1)
-                        name = name.strip()
-                        rest = rest.strip()
-                        parts = rest.split()
-                        qty = 0.0
-                        unit = ""
-                        if parts:
-                            try:
-                                qty = float(parts[0])
-                                unit = parts[1] if len(parts) > 1 else ""
-                            except Exception:
-                                unit = " ".join(parts)
-                        out.append({"name": name, "quantity": qty, "unit": unit})
-                    else:
-                        parts = line.split()
-                        if len(parts) >= 3:
-                            try:
-                                qty = float(parts[0]); unit = parts[1]; name = " ".join(parts[2:])
-                                out.append({"name": name, "quantity": qty, "unit": unit}); continue
-                            except Exception:
-                                pass
-                        out.append({"name": line, "quantity": 0.0, "unit": ""})
-                return out
-
-            for meal in ["Breakfast", "Lunch", "Dinner"]:
-                title = (request.form.get(f"{meal}_title") or "").strip()
-                descr = (request.form.get(f"{meal}_descr") or "").strip()
-                lines = (request.form.get(f"{meal}_ingredients") or "").strip()
-
-                entry = entries.get(meal)
-                if not entry:
-                    entry = MenuEntry(day=day, meal_type=meal, title=title, description=descr)
-                    db.session.add(entry)
-                    db.session.flush()
-                    entries[meal] = entry
-                else:
-                    entry.title = title
-                    entry.description = descr
-                    if getattr(entry, "ingredients", None) is not None:
-                        entry.ingredients.clear()
-
-                for ing in _parse_menu_ingredients(lines):
-                    try:
-                        qty_val = float(ing.get("quantity", 0) or 0)
-                    except Exception:
-                        qty_val = 0.0
-                    entry.ingredients.append(
-                        LegacyMenuIngredient(
-                            name=ing.get("name", "").strip(),
-                            quantity=qty_val,
-                            unit=(ing.get("unit", "") or "").strip()
-                        )
-                    )
-            db.session.commit()
-            flash("Menu saved.", "success")
-            return redirect(url_for("menu_legacy", day=day.strftime("%Y-%m-%d")))
-
-        def lines_for(entry):
-            if not entry or not getattr(entry, "ingredients", None):
-                return ""
-            return "\n".join(f"{i.name}: {i.quantity:g} {i.unit}".rstrip() for i in entry.ingredients)
-
-        ctx = {
-            "day": day,
-            "can_edit": can_edit,
-            "can_apply": can_apply,
-            "Breakfast": entries.get("Breakfast") if entries else None,
-            "Lunch": entries.get("Lunch") if entries else None,
-            "Dinner": entries.get("Dinner") if entries else None,
-            "Breakfast_lines": lines_for(entries.get("Breakfast")) if entries else "",
-            "Lunch_lines": lines_for(entries.get("Lunch")) if entries else "",
-            "Dinner_lines": lines_for(entries.get("Dinner")) if entries else "",
-        }
-        try:
-            return render_template("menu.html", **ctx)
-        except Exception:
-            return f"<h3>Menu for {day:%Y-%m-%d}</h3>", 200
-
-    # ======================================================================
-    # Menu Hub, Builder, API, Scheduler & weekly planned view
-    # ======================================================================
+    # ------------- MENU HUB -------------
     @app.route("/menu")
     @login_required
     def menu_hub():
+        # we just show the page; your templates can link to builder/scheduler
         return render_template("menu_hub.html")
 
-    @app.route("/menu/builder", methods=["GET", "POST"])
-    @login_required
-    def menu_builder():
-        if current_role() not in ("Manager", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-        errors, values = [], {}
-
-        if request.method == "POST":
-            meal_type   = (request.form.get("meal_type") or "").strip()
-            title       = (request.form.get("title") or "").strip()
-            description = (request.form.get("description") or "").strip()
-            ids  = request.form.getlist("ingredient_id")
-            qtys = request.form.getlist("quantity")
-
-            if meal_type not in ("Breakfast", "Lunch", "Dinner"):
-                errors.append("Select a valid meal type.")
-            if not title:
-                errors.append("Menu title is required.")
-            if not ids:
-                errors.append("Add at least one ingredient.")
-
-            if errors:
-                menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
-                values = {"meal_type": meal_type, "title": title, "description": description}
-                return render_template(
-                    "menu_builder.html",
-                    inventory_items=inventory_items,
-                    menus=menus,
-                    errors=errors,
-                    values=values,
-                    editing=False,
-                )
-
-            m = Menu(meal_type=meal_type, title=title, description=description)
-            db.session.add(m)
-            db.session.flush()
-
-            for inv_id, qty in zip(ids, qtys):
-                if not inv_id or not qty:
-                    continue
-                inv = InventoryItem.query.get(int(inv_id))
-                if not inv:
-                    continue
-                qv = _to_float(qty, 0.0)
-                m.ingredients.append(MenuIngredient(inventory_id=inv.id, quantity=qv))
-
-            db.session.commit()
-            flash(f'Menu "{m.title}" added.', "success")
-            return redirect(url_for("menu_builder"))
-
-        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
-        return render_template(
-            "menu_builder.html",
-            inventory_items=inventory_items,
-            menus=menus,
-            errors=errors,
-            values=values,
-            editing=False,
-        )
-
-    @app.route("/menu/builder/<int:menu_id>/edit", methods=["GET", "POST"])
-    @login_required
-    def menu_builder_edit(menu_id: int):
-        if current_role() not in ("Manager", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
-        m = Menu.query.get_or_404(menu_id)
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-        errors, values = [], {}
-
-        if request.method == "POST":
-            meal_type = request.form.get("meal_type") or m.meal_type
-            title     = (request.form.get("title") or "").strip()
-            descr     = (request.form.get("description") or "").strip()
-
-            if meal_type not in ("Breakfast", "Lunch", "Dinner"):
-                errors.append("Please choose a valid meal type.")
-            if not title:
-                errors.append("Menu title is required.")
-
-            ids  = request.form.getlist("ingredient_id")
-            qtys = request.form.getlist("quantity")
-
-            if not errors:
-                m.meal_type = meal_type
-                m.title = title
-                m.description = descr
-
-                m.ingredients.clear()
-                for inv_id, qty in zip(ids, qtys):
-                    if not inv_id or not qty:
-                        continue
-                    inv = InventoryItem.query.get(int(inv_id))
-                    if not inv:
-                        continue
-                    qv = _to_float(qty, 0.0)
-                    m.ingredients.append(MenuIngredient(inventory_id=inv.id, quantity=qv))
-
-                db.session.commit()
-                flash(f'Menu "{m.title}" updated.', "success")
-                return redirect(url_for("menu_builder"))
-
-            values = {"title": title, "description": descr}
-
-        return render_template(
-            "menu_builder.html",
-            inventory_items=inventory_items,
-            menus=[],
-            errors=errors,
-            values=values,
-            editing=True,
-            current_menu=m
-        )
-
-    @app.route("/menu/builder/<int:menu_id>/delete", methods=["POST"])
-    @login_required
-    def menu_builder_delete(menu_id: int):
-        if current_role() not in ("Manager", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-        m = Menu.query.get_or_404(menu_id)
-        title = m.title
-        db.session.delete(m)
-        db.session.commit()
-        flash(f'Menu "{title}" deleted.', "success")
-        return redirect(url_for("menu_builder"))
-
-    @app.route("/api/menu/<int:menu_id>/items")
-    @login_required
-    def api_menu_items(menu_id):
-        m = Menu.query.get_or_404(menu_id)
-        items = []
-        for ing in m.ingredients:
-            inv = InventoryItem.query.get(ing.inventory_id)
-            items.append({
-                "id": ing.id,
-                "inventory_id": ing.inventory_id,
-                "name": inv.name if inv else "",
-                "quantity": ing.quantity,
-                "unit": (inv.unit if inv else "")
-            })
-        return jsonify({"menu_id": m.id, "meal_type": m.meal_type, "title": m.title, "items": items})
-
-    @app.route("/menu/scheduler", methods=["GET", "POST"])
-    @login_required
-    def menu_scheduler():
-        if current_role() not in ("Manager", "Cook", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
-        menus = Menu.query.order_by(Menu.meal_type, Menu.title).all()
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name).all()
-
-        if request.method == "POST":
-            selected_date = _parse_date(request.form.get("date")) or date.today()
-            notes = (request.form.get("notes") or "").strip()
-
-            # which menus picked
-            chosen = {}
-            for meal_type in ["Breakfast", "Lunch", "Dinner"]:
-                mid = request.form.get(f"{meal_type}_menu")
-                if mid:
-                    chosen[meal_type] = int(mid)
-
-            if not chosen:
-                flash("No menus selected; nothing saved.", "error")
-                return redirect(url_for("menu_scheduler"))
-
-            # pre-check inventory
-            need_map, name_map = {}, {}
-            for meal_type, mid in chosen.items():
-                base_menu = Menu.query.get(mid)
-                for ing in base_menu.ingredients:
-                    override_key = f"{meal_type}_qty_{ing.id}"
-                    use_qty = _to_float(request.form.get(override_key), ing.quantity)
-                    inv = InventoryItem.query.get(ing.inventory_id)
-                    if not inv:
-                        flash(f"Inventory item missing for a menu ingredient in {meal_type}.", "error")
-                        return redirect(url_for("menu_scheduler"))
-                    need_map[inv.id] = need_map.get(inv.id, 0.0) + (use_qty or 0.0)
-                    name_map[inv.id] = (inv.name, inv.unit)
-
-            insuff = []
-            for inv_id, need in need_map.items():
-                inv = InventoryItem.query.get(inv_id)
-                have = inv.quantity or 0.0
-                if have < need:
-                    nm, un = name_map[inv_id]
-                    insuff.append(f"{nm} needs {need:g}{un} (have {have:g})")
-
-            if insuff:
-                flash("Not saved. Issues: " + "; ".join(insuff), "error")
-                return redirect(url_for("menu_scheduler"))
-
-            # ok, save schedule and deduct
-            deductions = []
-            for meal_type, mid in chosen.items():
-                # clear existing schedule for that date+meal
-                MenuSchedule.query.filter_by(date=selected_date, meal_type=meal_type).delete(synchronize_session=False)
-
-                sched = MenuSchedule(date=selected_date, meal_type=meal_type, menu_id=mid, notes=notes)
-                db.session.add(sched)
-                db.session.flush()
-
-                base_menu = Menu.query.get(mid)
-                for ing in base_menu.ingredients:
-                    override_key = f"{meal_type}_qty_{ing.id}"
-                    use_qty = _to_float(request.form.get(override_key), ing.quantity)
-                    db.session.add(MenuScheduleItem(
-                        schedule_id=sched.id,
-                        inventory_id=ing.inventory_id,
-                        quantity_used=use_qty
-                    ))
-                    inv = InventoryItem.query.get(ing.inventory_id)
-                    inv.quantity = (inv.quantity or 0.0) - (use_qty or 0.0)
-                    deductions.append(f"{inv.name} -{use_qty:g} {inv.unit}")
-
-            db.session.commit()
-            flash("Deducted: " + ", ".join(deductions[:8]) + (" ..." if len(deductions) > 8 else ""), "success")
-            return redirect(url_for("menu_scheduler"))
-
-        day_str = request.args.get("date")
-        selected_date = _parse_date(day_str) or date.today()
-        existing = MenuSchedule.query.filter_by(date=selected_date).order_by(MenuSchedule.meal_type).all()
-
-        by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
-        for m in menus:
-            by_meal.get(m.meal_type, []).append(m)
-
-        return render_template(
-            "menu_scheduler.html",
-            date_value=selected_date.strftime("%Y-%m-%d"),
-            menus_by_meal=by_meal,
-            inventory_items=inventory_items,
-            existing=existing,
-            suppress_global_flash=True
-        )
-
-    # ---------- tiny assistant endpoint ----------
-    def _assistant_reply(text: str) -> str:
-        q = (text or "").strip().lower()
-        if not q:
-            return "Hi! Ask me about Residents, Inventory, Menu, Staff, or where things are in the app."
-        if "resident" in q:
-            try:
-                return f"You can manage residents here: {url_for('residents_list', _external=False)}"
-            except Exception:
-                return "You can manage residents from the Residents tile on the dashboard."
-        if "inventory" in q or "stock" in q:
-            try:
-                return f"Inventory is here: {url_for('inventory_list', _external=False)}"
-            except Exception:
-                return "Open the Inventory tile to view and edit stock."
-        if "menu" in q or "meal" in q:
-            try:
-                return f"Menu tools are here: {url_for('menu_hub', _external=False)}"
-            except Exception:
-                return "Open the Menu tile to plan meals and schedules."
-        if "staff" in q or "employee" in q:
-            try:
-                return f"Staff management: {url_for('staff_list', _external=False)}"
-            except Exception:
-                return "Open the Staff tile to add or edit employees."
-        if "password" in q and "forgot" in q:
-            try:
-                return f"Use the reset page: {url_for('forgot_password', _external=False)}"
-            except Exception:
-                return "Use the Forgot/Reset password page from the login screen."
-        if "mfa" in q or "authenticator" in q or "2fa" in q:
-            return "MFA is available from your profile: open Menu → your profile → MFA setup."
-        return ("I didn’t catch that. Try: 'Where is inventory?', 'How to add residents?', "
-                "'Open menu', or 'reset password'.")
-
-    @app.post("/api/chat")
-    def api_chat():
-        if not session.get("user"):
-            return jsonify({"ok": False, "error": "auth_required"}), 401
-        data = request.get_json(silent=True) or {}
-        user_msg = data.get("message", "")
-        bot_msg = _assistant_reply(user_msg)
-        return jsonify({"ok": True, "reply": bot_msg})
-
-    # ---------- planned weekly view ----------
-    @app.route("/menu/planned")
-    @login_required
-    def planned_menus():
-        try:
-            offset = int(request.args.get("offset", 0))
-        except Exception:
-            offset = 0
-
-        today = date.today()
-        current_monday = today - timedelta(days=today.weekday())
-        week_start = current_monday + timedelta(weeks=offset)
-        week_end = week_start + timedelta(days=6)
-
-        dows = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        days = [{"dow": dows[i], "date": (week_start + timedelta(days=i))} for i in range(7)]
-
-        schedules = (
-            MenuSchedule.query
-            .filter(MenuSchedule.date >= week_start, MenuSchedule.date <= week_end)
-            .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
-            .all()
-        )
-
-        grouped = defaultdict(lambda: defaultdict(list))
-        menu_title_cache = {}
-
-        def menu_title(mid):
-            if mid in menu_title_cache:
-                return menu_title_cache[mid]
-            m = Menu.query.get(mid) if mid else None
-            title = m.title if m else "(untitled)"
-            menu_title_cache[mid] = title
-            return title
-
-        for s in schedules:
-            grouped[s.date][s.meal_type].append({"id": s.id, "menu_title": menu_title(s.menu_id)})
-
-        prev_url = url_for("planned_menus", offset=offset-1)
-        next_url = url_for("planned_menus", offset=offset+1)
-
-        return render_template(
-            "planned_menu_week.html",
-            grouped=grouped,
-            week_start=week_start,
-            week_end=week_end,
-            days=days,
-            prev_url=prev_url,
-            next_url=next_url,
-            offset=offset
-        )
-
-    @app.route("/menu/plan/<int:schedule_id>/delete")
-    @login_required
-    def delete_schedule(schedule_id):
-        nxt = request.args.get("next") or url_for("planned_menus")
-        s = MenuSchedule.query.get_or_404(schedule_id)
-        db.session.delete(s)
-        db.session.commit()
-        flash("Scheduled menu removed.", "success")
-        return redirect(nxt)
-
-    @app.route("/menu/planned/<string:day_str>")
-    @login_required
-    def planned_menu_view(day_str):
-        d = _parse_date(day_str)
-        if not d:
-            flash("Invalid date.", "error")
-            return redirect(url_for("planned_menus"))
-
-        schedules = (MenuSchedule.query
-                     .filter_by(date=d)
-                     .order_by(MenuSchedule.meal_type.asc())
-                     .all())
-
-        order = {"Breakfast": 0, "Lunch": 1, "Dinner": 2}
-        schedules = sorted(schedules, key=lambda s: order.get(s.meal_type, 99))
-
-        detail = []
-        for s in schedules:
-            rows = (MenuScheduleItem.query
-                    .filter_by(schedule_id=s.id)
-                    .order_by(MenuScheduleItem.id.asc())
-                    .all())
-            items = []
-            for r in rows:
-                inv = InventoryItem.query.get(r.inventory_id)
-                items.append({
-                    "name": inv.name if inv else "(deleted item)",
-                    "unit": inv.unit if inv else "",
-                    "qty":  r.quantity_used or 0.0
-                })
-
-            title = "(untitled)"
-            if getattr(s, "menu_id", None):
-                mm = Menu.query.get(s.menu_id)
-                if mm:
-                    title = mm.title
-
-            detail.append({
-                "meal": s.meal_type,
-                "notes": getattr(s, "notes", None),
-                "menu_title": title,
-                "items": items,
-            })
-
-        return render_template("planned_menu_view.html", day_value=d, blocks=detail)
-
-    # health
+    # ------------- HEALTH -------------
     @app.route("/healthz")
     def healthz():
         return "ok", 200
@@ -1439,29 +437,21 @@ def create_app():
     return app
 
 
-# module-level app for gunicorn / flask run
+# ------------ create app & seed manager ------------
 app = create_app()
 with app.app_context():
-    db.create_all()
-    # ensure seed user exists
     if not User.query.first():
         mgr = User(
-            first_name="",
-            last_name="",
             username="manager",
             employee_id="00000000",
             email="manager@example.com",
             role="Manager",
-            must_change_password=False,
         )
-        try:
-            mgr.set_password("1234")
-        except Exception:
-            pass
+        mgr.set_password("1234")
         db.session.add(mgr)
         db.session.commit()
-        print("Seeded manager (manager / 1234)")
+        print("Seeded: manager / 1234")
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")),
-            debug=os.getenv("FLASK_DEBUG", "0") == "1")
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
