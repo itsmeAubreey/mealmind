@@ -1,112 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - MealMind{% endblock %}
-
 {% block content %}
-<div class="mm-dashboard-shell">
-    <!-- top blue bar is in base.html -->
-    <div class="mm-dashboard-inner">
-        <div class="mm-header">
-            <h1>Welcome, {{ user.get("name") or user.get("username") }}.</h1>
-            <p>Role: {{ user.get("role") }}</p>
-        </div>
-
-        <div class="mm-tile-row">
-            <a href="{{ url_for('residents_list') }}" class="mm-tile mm-tile-purple">
-                <div class="mm-tile-icon">👥</div>
-                <div class="mm-tile-title">Residents</div>
-                <div class="mm-tile-text">Manage resident details &amp; print cards.</div>
-            </a>
-
-            <a href="{{ url_for('inventory_list') }}" class="mm-tile mm-tile-green">
-                <div class="mm-tile-icon">📦</div>
-                <div class="mm-tile-title">Inventory</div>
-                <div class="mm-tile-text">Track stock &amp; supplies.</div>
-            </a>
-
-            <a href="{{ url_for('menu_hub') }}" class="mm-tile mm-tile-blue">
-                <div class="mm-tile-icon">🍽</div>
-                <div class="mm-tile-title">Menu</div>
-                <div class="mm-tile-text">Plan menus &amp; schedule meals.</div>
-            </a>
-
-            {% if user.get("role") == "Manager" %}
-            <a href="{{ url_for('staff_list') }}" class="mm-tile mm-tile-red">
-                <div class="mm-tile-icon">📊</div>
-                <div class="mm-tile-title">Staff</div>
-                <div class="mm-tile-text">Add &amp; manage employees.</div>
-            </a>
-            {% endif %}
-        </div>
+  <div class="card" style="margin-bottom: 1rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+      <div>
+        <h1 style="margin:0; font-size:1.3rem;">
+          Welcome, {{ user.first_name or user.username }}
+        </h1>
+        <p style="margin:0.2rem 0 0; font-size:0.8rem; color:#475569;">
+          Role: {{ user.role }}
+        </p>
+      </div>
+      <div>
+        <!-- optional, can add date/time later -->
+      </div>
     </div>
-</div>
+  </div>
 
-<style>
-.mm-dashboard-shell {
-    background: #eef1f6;
-    min-height: calc(100vh - 60px);
-}
-.mm-dashboard-inner {
-    max-width: 1150px;
-    margin: 0 auto;
-    padding: 32px 0 48px 0;
-}
-.mm-header h1 {
-    font-size: 1.7rem;
-    margin-bottom: .35rem;
-    color: #0f172a;
-}
-.mm-header p {
-    color: #475569;
-    font-size: .9rem;
-}
-.mm-tile-row {
-    display: flex;
-    gap: 22px;
-    margin-top: 26px;
-    flex-wrap: wrap;
-}
-.mm-tile {
-    flex: 1 1 210px;
-    min-width: 210px;
-    border-radius: 18px;
-    color: #fff;
-    text-decoration: none;
-    padding: 18px 18px 20px 18px;
-    box-shadow: 0 18px 35px rgba(15,23,42,.12);
-    position: relative;
-    overflow: hidden;
-}
-.mm-tile::after {
-    content: "";
-    position: absolute;
-    width: 130px;
-    height: 130px;
-    border-radius: 9999px;
-    background: rgba(255,255,255,.12);
-    right: -10px;
-    bottom: -10px;
-}
-.mm-tile-icon {
-    font-size: 1.5rem;
-    margin-bottom: .8rem;
-}
-.mm-tile-title {
-    font-weight: 700;
-    font-size: 1.2rem;
-    margin-bottom: .4rem;
-}
-.mm-tile-text {
-    font-size: .8rem;
-    max-width: 160px;
-    line-height: 1.3;
-}
-.mm-tile-purple { background: linear-gradient(135deg, #7b39ff, #9b49ff); }
-.mm-tile-green  { background: linear-gradient(135deg, #17a569, #1ec27f); }
-.mm-tile-blue   { background: linear-gradient(135deg, #1878ff, #3b96ff); }
-.mm-tile-red    { background: linear-gradient(135deg, #d93557, #f0536f); }
-@media (max-width: 900px){
-    .mm-tile-row { flex-direction: column; }
-    .mm-tile { width: 100%; }
-}
-</style>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:1rem;">
+    <!-- Residents -->
+    <a href="{{ url_for('residents_list') }}"
+       style="background:#ecfdf3; border:1px solid #bbf7d0; border-radius:0.6rem; padding:1rem; text-decoration:none; color:#022c22; display:block;">
+      <h2 style="margin:0 0 0.4rem; font-size:1rem;">Residents</h2>
+      <p style="margin:0; font-size:0.72rem; color:#166534;">
+        View, add, and update resident records.
+      </p>
+    </a>
+
+    <!-- Inventory -->
+    <a href="{{ url_for('inventory_list') }}"
+       style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:0.6rem; padding:1rem; text-decoration:none; color:#0f172a; display:block;">
+      <h2 style="margin:0 0 0.4rem; font-size:1rem;">Inventory</h2>
+      <p style="margin:0; font-size:0.72rem; color:#1d4ed8;">
+        Manage stocks, units, and low items.
+      </p>
+    </a>
+
+    <!-- Menu -->
+    <a href="{{ url_for('menu_hub') }}"
+       style="background:#fef9c3; border:1px solid #fde68a; border-radius:0.6rem; padding:1rem; text-decoration:none; color:#78350f; display:block;">
+      <h2 style="margin:0 0 0.4rem; font-size:1rem;">Menu</h2>
+      <p style="margin:0; font-size:0.72rem; color:#b45309;">
+        Build meals, schedule, and view weekly plan.
+      </p>
+    </a>
+
+    <!-- Staff (Manager only) -->
+    {% if user.role == "Manager" %}
+      <a href="{{ url_for('staff_list') }}"
+         style="background:#fef2f2; border:1px solid #fecaca; border-radius:0.6rem; padding:1rem; text-decoration:none; color:#7f1d1d; display:block;">
+        <h2 style="margin:0 0 0.4rem; font-size:1rem;">Staff</h2>
+        <p style="margin:0; font-size:0.72rem; color:#b91c1c;">
+          Add staff, set roles, temp passwords.
+        </p>
+      </a>
+    {% endif %}
+  </div>
 {% endblock %}
