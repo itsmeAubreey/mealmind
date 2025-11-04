@@ -16,7 +16,7 @@ from flask import (
 )
 from sqlalchemy import or_
 
-# import your models
+# your models
 from models import (
     db,
     User,
@@ -28,7 +28,8 @@ from models import (
     MenuScheduleItem,
 )
 
-# ---------- helpers ----------
+
+# ---------- small helpers ----------
 def _parse_date(s: str):
     if not s:
         return None
@@ -63,7 +64,7 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
-    # DB path that works on Azure
+    # sqlite path that works on Azure
     azure_root = "/home/site/wwwroot"
     if os.path.exists(azure_root):
         db_path = os.path.join(azure_root, "app.db")
@@ -76,7 +77,7 @@ def create_app():
     db.init_app(app)
     with app.app_context():
         db.create_all()
-        # seed default user if empty
+        # seed default user if none
         if not User.query.first():
             u = User(
                 username="manager",
@@ -88,13 +89,13 @@ def create_app():
             db.session.add(u)
             db.session.commit()
 
-    # ⭐ fix: inject both current_user AND user so your templates work
+    # make {{ user }} and {{ current_user }} both work in templates
     @app.context_processor
     def inject_user():
         u = session.get("user")
         return {"current_user": u, "user": u}
 
-    # ---------- auth ----------
+    # ---------------- AUTH ----------------
     @app.route("/")
     def home():
         if "user" in session:
@@ -137,13 +138,13 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
-    # ---------- dashboard ----------
+    # ---------------- DASHBOARD ----------------
     @app.route("/dashboard")
     @login_required
     def dashboard():
         return render_template("dashboard.html")
 
-    # ---------- residents ----------
+    # ---------------- RESIDENTS ----------------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -205,11 +206,9 @@ def create_app():
         r = Resident.query.get_or_404(rid)
         return render_template("resident_print.html", resident=r)
 
-       # -------------------------------------------------
-    # staff
-    # -------------------------------------------------
+    # ---------------- STAFF ----------------
     def _staff_roles():
-        # match what your template shows
+        # you can change this to match your dropdown
         return ["Manager", "Cook", "Dietary Aide", "Dietitian"]
 
     @app.route("/staff")
@@ -237,13 +236,12 @@ def create_app():
             User.first_name.asc(), User.last_name.asc(), User.username.asc()
         ).all()
 
-        roles = _staff_roles()
         return render_template(
             "staff_list.html",
             users=users,
             q=q,
             role_filter=role_filter,
-            roles=roles,
+            roles=_staff_roles(),
         )
 
     @app.route("/staff/new", methods=["GET", "POST"])
@@ -300,8 +298,8 @@ def create_app():
     @app.route("/staff/<int:uid>/edit", methods=["GET", "POST"])
     @login_required
     def staff_edit(uid):
-        roles = _staff_roles()
         u = User.query.get_or_404(uid)
+        roles = _staff_roles()
         errors = []
         values = {
             "first_name": u.first_name or "",
@@ -354,8 +352,17 @@ def create_app():
             return redirect(url_for("staff_list"))
         return render_template("reset.html", user=u)
 
+    # ⭐ this is the one your template wanted but you didn’t have
+    @app.route("/staff/<int:uid>/delete", methods=["POST"])
+    @login_required
+    def staff_delete(uid):
+        u = User.query.get_or_404(uid)
+        db.session.delete(u)
+        db.session.commit()
+        flash("Staff deleted.", "success")
+        return redirect(url_for("staff_list"))
 
-    # ---------- inventory ----------
+    # ---------------- INVENTORY ----------------
     @app.route("/inventory")
     @login_required
     def inventory_list():
@@ -484,13 +491,30 @@ def create_app():
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
-    # ---------- menu hub ----------
+    # ---------------- MENU HUB & PAGES ----------------
     @app.route("/menu")
     @login_required
     def menu_hub():
+        # your menu_hub.html links to several pages, so we created routes for them below
         return render_template("menu_hub.html")
 
-    # ---------- menu scheduler ----------
+    # this is the one the log said was missing: menu_builder
+    @app.route("/menu/builder")
+    @login_required
+    def menu_builder():
+        return render_template("menu_builder.html")
+
+    @app.route("/menu/daily")
+    @login_required
+    def menu_daily():
+        return render_template("menu_daily.html")
+
+    @app.route("/menu/daily/view")
+    @login_required
+    def menu_daily_view():
+        return render_template("menu_daily_view.html")
+
+    # ---------------- MENU SCHEDULER ----------------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
@@ -516,7 +540,6 @@ def create_app():
             day_bucket.setdefault(s.meal_type, []).append(s)
 
         days = [{"date": monday + timedelta(days=i)} for i in range(7)]
-
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
 
         return render_template(
@@ -527,7 +550,7 @@ def create_app():
             inventory_items=inventory_items,
         )
 
-    # ---------- planned menus ----------
+    # ---------------- PLANNED MENUS ----------------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
@@ -578,7 +601,13 @@ def create_app():
             next_url=next_url,
         )
 
-    # ---------- health ----------
+    # optional: you have planned_menu_view.html too
+    @app.route("/menu/planned/view")
+    @login_required
+    def planned_menu_view():
+        return render_template("planned_menu_view.html")
+
+    # ---------------- health ----------------
     @app.route("/healthz")
     def healthz():
         return "ok", 200
