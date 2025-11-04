@@ -302,26 +302,26 @@ def create_app():
                 return redirect(url_for("change_password"))
 
     # ---------- auth ----------
-    @app.route("/login", methods=["GET", "POST"])
-    def login():
-        if request.method == "POST":
-            username = (request.form.get("username") or "").strip().lower()
-            password = (request.form.get("password") or "").strip()
-            user = User.query.filter(
-                or_(User.username.ilike(username), User.employee_id.ilike(username))
-            ).first()
+   # @app.route("/login", methods=["GET", "POST"])
+   # def login():
+   #     if request.method == "POST":
+   #         username = (request.form.get("username") or "").strip().lower()
+   #         password = (request.form.get("password") or "").strip()
+   #         user = User.query.filter(
+   #             or_(User.username.ilike(username), User.employee_id.ilike(username))
+  #          ).first()
 
-            stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
-            if user and _verify_password(stored, password):
-                # MFA gate if enabled
-                if getattr(user, "mfa_secret", None):
-                    session["pre_2fa_uid"] = user.id
-                    return redirect(url_for("mfa_verify"))
+   #         stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
+  #          if user and _verify_password(stored, password):
+  #              # MFA gate if enabled
+   #             if getattr(user, "mfa_secret", None):
+   #                 session["pre_2fa_uid"] = user.id
+   #                 return redirect(url_for("mfa_verify"))
                 # normal login
-                return login_user(user)
+   #             return login_user(user)
 
-            flash("Invalid credentials.", "error")
-        return render_template("login.html")
+ #           flash("Invalid credentials.", "error")
+  #      return render_template("login.html")
 
     @app.route("/change-password", methods=["GET", "POST"])
     @login_required
