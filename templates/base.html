@@ -6,170 +6,82 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
-        --bg: #f5f6fa;
+        --bg: #f4f5f9;
+        --nav: #0f172a;
         --card: #ffffff;
-        --accent: #0f766e;
-        --accent-soft: #ccf5f0;
-        --danger: #dc2626;
       }
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: var(--bg);
       }
       header {
-        background: #0f172a;
+        height: 54px;
+        background: var(--nav);
         color: #fff;
-        padding: 0.75rem 1.25rem;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 1rem;
+        padding: 0 1.5rem;
       }
       .brand {
         font-weight: 700;
-        font-size: 1.05rem;
+        letter-spacing: 0.05em;
       }
       .brand a {
         color: #fff;
         text-decoration: none;
       }
-      .top-actions {
+      .top-right {
         display: flex;
+        gap: 0.75rem;
         align-items: center;
-        gap: 1rem;
-      }
-      .user-pill {
-        font-size: 0.75rem;
-        line-height: 1.1;
-      }
-      .user-pill strong {
-        display: block;
-        font-size: 0.8rem;
       }
       .logout-btn {
         background: #f97316;
-        border: none;
         color: #fff;
-        padding: 0.4rem 0.9rem;
+        padding: 0.35rem 0.85rem;
         border-radius: 9999px;
         font-size: 0.7rem;
-        cursor: pointer;
         text-decoration: none;
       }
       main {
-        max-width: 1180px;
-        margin: 1.2rem auto;
-        padding: 0 1.1rem 2.5rem;
-      }
-      .flash-container {
-        margin-bottom: 1rem;
+        max-width: 1240px;
+        margin: 1.5rem auto 2.5rem;
+        padding: 0 1rem;
       }
       .flash {
         background: #fff;
         border-left: 4px solid #0f766e;
-        padding: 0.65rem 0.75rem;
-        margin-bottom: 0.5rem;
+        padding: 0.5rem 0.8rem;
         border-radius: 0.4rem;
-        font-size: 0.8rem;
+        margin-bottom: 0.7rem;
+        font-size: 0.78rem;
       }
       .flash.error {
         border-left-color: #dc2626;
       }
-      .flash.success {
-        border-left-color: #16a34a;
-      }
-      .card {
-        background: var(--card);
-        border-radius: 0.6rem;
-        padding: 1rem;
-      }
-      a {
-        color: #0f766e;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th, td {
-        padding: 0.5rem 0.4rem;
-        border-bottom: 1px solid #e2e8f0;
-        font-size: 0.8rem;
-      }
-      th {
-        text-align: left;
-        background: #f8fafc;
-      }
-      .btn {
-        display: inline-block;
-        background: #0f766e;
-        color: #fff;
-        text-decoration: none;
-        border-radius: 0.4rem;
-        padding: 0.35rem 0.75rem;
-        font-size: 0.7rem;
-      }
-      .btn-secondary {
-        background: #475569;
-      }
-      .btn-danger {
-        background: #dc2626;
-      }
-      .toolbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 0.75rem;
-      }
-      .toolbar h1 {
-        margin: 0;
-        font-size: 1.1rem;
-      }
-      @media (max-width: 640px) {
-        header {
-          flex-wrap: wrap;
-        }
-        .top-actions {
-          flex-wrap: wrap;
-          justify-content: flex-end;
-        }
-        main {
-          margin: 1rem 0;
-        }
-      }
+      a { color: #0f766e; }
     </style>
   </head>
   <body>
     <header>
-      <div class="brand">
-        <a href="{{ url_for('dashboard') }}">MealMind</a>
-      </div>
-      <div class="top-actions">
-        {% if current_user %}
-          <div class="user-pill">
-            <strong>Welcome, {{ current_user.first_name or current_user.username }}</strong>
-            <span>Role: {{ current_user.role }}</span>
-          </div>
-        {% endif %}
-        <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
-      </div>
+      <div class="brand"><a href="{{ url_for('dashboard') }}">MealMind</a></div>
+      {% if current_user %}
+        <div class="top-right">
+          <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+      {% endif %}
     </header>
-
     <main>
-      <div class="flash-container">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="flash {{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
-      </div>
-
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
       {% block content %}{% endblock %}
     </main>
   </body>
