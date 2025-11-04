@@ -19,3 +19,5 @@ authlib>=1.3,<2.0
 
 # ---- Production server for Azure Linux
 gunicorn>=21.2,<23.0
+
+requests
