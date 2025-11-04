@@ -1,140 +1,187 @@
-# models.py
+# models.py — MealMind data models
 from datetime import datetime, date
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy.orm import relationship
 
 db = SQLAlchemy()
 
-# -----------------------------
-# User
-# -----------------------------
+
 class User(db.Model):
     __tablename__ = "user"
 
     id = db.Column(db.Integer, primary_key=True)
-    first_name = db.Column(db.String(80))
-    last_name = db.Column(db.String(80))
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    employee_id = db.Column(db.String(40), unique=True)
-    email = db.Column(db.String(255))
-    role = db.Column(db.String(40), nullable=False, default="Dietary Aide")
-    password_hash = db.Column(db.String(255), nullable=False)
+
+    # identity
+    first_name = db.Column(db.String(100))
+    last_name = db.Column(db.String(100))
+    username = db.Column(db.String(120), unique=True, index=True, nullable=False)
+    employee_id = db.Column(db.String(50), unique=True, index=True)
+    email = db.Column(db.String(200), index=True)
+
+    # role: Manager, Cook, Dietitian, Dietary Aide
+    role = db.Column(db.String(50), default="Dietary Aide")
+
+    # passwords
+    password_hash = db.Column(db.String(255))
+    # legacy/plaintext field so old data still works
+    password = db.Column(db.String(255))
+
     must_change_password = db.Column(db.Boolean, default=False)
+
+    # MFA
+    mfa_enabled = db.Column(db.Boolean, default=False)
+    mfa_secret = db.Column(db.String(64))
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Password helpers
-    def set_password(self, pw: str) -> None:
-        self.password_hash = generate_password_hash(pw)
+    def set_password(self, raw: str):
+        self.password_hash = generate_password_hash(raw)
+        # keep legacy blank so we don't store plain
+        self.password = None
 
-    def check_password(self, pw: str) -> bool:
-        return check_password_hash(self.password_hash, pw)
+    def check_password(self, raw: str) -> bool:
+        if self.password_hash:
+            try:
+                return check_password_hash(self.password_hash, raw)
+            except Exception:
+                pass
+        # fallback to legacy plain text
+        if self.password:
+            return self.password == raw
+        return False
+
+    def __repr__(self):
+        return f"<User {self.username} ({self.role})>"
 
 
-# -----------------------------
-# Resident  (NO 'room' column)
-# -----------------------------
 class Resident(db.Model):
+    __tablename__ = "resident"
+
     id = db.Column(db.Integer, primary_key=True)
-    first_name = db.Column(db.String(80), nullable=False, index=True)
-    last_name = db.Column(db.String(80), nullable=False, index=True)
-    birthday = db.Column(db.Date, nullable=True)
-    medications = db.Column(db.Text, nullable=True)
-    illnesses = db.Column(db.Text, nullable=True)
-    allergies = db.Column(db.Text, nullable=True)
-    fluids = db.Column(db.String(80), nullable=True)
-    diet = db.Column(db.String(120), nullable=True)
-    notes = db.Column(db.Text, nullable=True)
+    first_name = db.Column(db.String(120), nullable=False)
+    last_name = db.Column(db.String(120), nullable=False)
+
+    birthday = db.Column(db.Date)
+    # some of your earlier versions stored age as a column
+    age = db.Column(db.Integer)
+
+    diet = db.Column(db.String(200))
+    allergies = db.Column(db.String(300))
+    illnesses = db.Column(db.String(300))
+    medications = db.Column(db.String(300))
+    fluids = db.Column(db.String(200))
+    notes = db.Column(db.Text)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    @property
-    def age(self) -> int | None:
-        """Compute age from birthday (shown in list, not stored)."""
+    def calc_age(self):
         if not self.birthday:
             return None
         today = date.today()
-        years = today.year - self.birthday.year
-        if (today.month, today.day) < (self.birthday.month, self.birthday.day):
-            years -= 1
-        return years
+        return today.year - self.birthday.year - (
+            (today.month, today.day) < (self.birthday.month, self.birthday.day)
+        )
+
+    def __repr__(self):
+        return f"<Resident {self.last_name}, {self.first_name}>"
 
 
-# -----------------------------
-# InventoryItem
-# -----------------------------
 class InventoryItem(db.Model):
+    __tablename__ = "inventory_item"
+
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), index=True, unique=True, nullable=False)
-    unit = db.Column(db.String(30), default="pcs")
-    quantity = db.Column(db.Float, default=0)
-    low_stock_threshold = db.Column(db.Float, default=0)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    name = db.Column(db.String(200), nullable=False, index=True)
+    unit = db.Column(db.String(50), nullable=False, default="pcs")
+    quantity = db.Column(db.Float, default=0.0)
+    low_stock_threshold = db.Column(db.Float, default=0.0)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<InventoryItem {self.name} ({self.quantity} {self.unit})>"
 
 
-# =======================================================
-# 🧾 MENU MANAGEMENT AND SCHEDULER SYSTEM
-# =======================================================
+# ---------------- Menus ----------------
 
-# -----------------------------
-# Menu: reusable titled menu (Breakfast/Lunch/Dinner)
-# -----------------------------
 class Menu(db.Model):
+    """
+    A reusable meal template: Breakfast / Lunch / Dinner
+    with a title and optional description, and ingredient lines that point to InventoryItem.
+    """
     __tablename__ = "menu"
+
     id = db.Column(db.Integer, primary_key=True)
-    meal_type = db.Column(db.String(50), nullable=False)  # Breakfast, Lunch, Dinner
-    title = db.Column(db.String(150), nullable=False)
+    meal_type = db.Column(db.String(50), nullable=False)  # Breakfast / Lunch / Dinner
+    title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
-    ingredients = relationship("MenuIngredient", backref="menu", cascade="all, delete-orphan")
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    ingredients = db.relationship(
+        "MenuIngredient",
+        backref="menu",
+        cascade="all, delete-orphan",
+        lazy="joined",
+    )
 
     def __repr__(self):
         return f"<Menu {self.meal_type} - {self.title}>"
 
 
-# -----------------------------
-# MenuIngredient: links a Menu to Inventory items
-# -----------------------------
 class MenuIngredient(db.Model):
+    """
+    One ingredient inside a Menu, pointing to InventoryItem.
+    """
     __tablename__ = "menu_ingredient"
+
     id = db.Column(db.Integer, primary_key=True)
     menu_id = db.Column(db.Integer, db.ForeignKey("menu.id"), nullable=False)
     inventory_id = db.Column(db.Integer, db.ForeignKey("inventory_item.id"), nullable=False)
-    quantity = db.Column(db.Float, nullable=False)
-    unit = db.Column(db.String(50))
+    quantity = db.Column(db.Float, default=0.0)
 
-    inventory_item = relationship("InventoryItem")
+    inventory_item = db.relationship("InventoryItem")
 
     def __repr__(self):
-        return f"<MenuIngredient {self.inventory_item.name if self.inventory_item else ''} {self.quantity}{self.unit}>"
+        return f"<MenuIngredient {self.inventory_id} x {self.quantity}>"
 
 
-# -----------------------------
-# MenuSchedule: date-based menu plan
-# -----------------------------
 class MenuSchedule(db.Model):
+    """
+    A specific planned meal on a specific date (e.g. 2025-11-04 Lunch = Menu #12)
+    """
     __tablename__ = "menu_schedule"
+
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False)
+    date = db.Column(db.Date, nullable=False, index=True)
     meal_type = db.Column(db.String(50), nullable=False)
     menu_id = db.Column(db.Integer, db.ForeignKey("menu.id"))
     notes = db.Column(db.Text)
-    items = relationship("MenuScheduleItem", backref="schedule", cascade="all, delete-orphan")
+
+    menu = db.relationship("Menu")
+
+    items = db.relationship(
+        "MenuScheduleItem",
+        backref="schedule",
+        cascade="all, delete-orphan",
+        lazy="joined",
+    )
 
     def __repr__(self):
         return f"<MenuSchedule {self.date} {self.meal_type}>"
 
 
-# -----------------------------
-# MenuScheduleItem: individual items applied per scheduled date
-# -----------------------------
 class MenuScheduleItem(db.Model):
+    """
+    What inventory was consumed for that scheduled meal.
+    """
     __tablename__ = "menu_schedule_item"
+
     id = db.Column(db.Integer, primary_key=True)
     schedule_id = db.Column(db.Integer, db.ForeignKey("menu_schedule.id"), nullable=False)
     inventory_id = db.Column(db.Integer, db.ForeignKey("inventory_item.id"), nullable=False)
-    quantity_used = db.Column(db.Float, nullable=False)
+    quantity_used = db.Column(db.Float, default=0.0)
 
-    inventory_item = relationship("InventoryItem")
+    inventory_item = db.relationship("InventoryItem")
 
     def __repr__(self):
-        return f"<MenuScheduleItem {self.inventory_item.name if self.inventory_item else ''} -{self.quantity_used}>"
+        return f"<MenuScheduleItem schedule={self.schedule_id} inv={self.inventory_id} qty={self.quantity_used}>"
