@@ -323,11 +323,6 @@ def create_app():
             flash("Invalid credentials.", "error")
         return render_template("login.html")
 
-    @app.route("/logout")
-    def logout():
-        session.clear()
-        return redirect(url_for("login"))
-
     @app.route("/change-password", methods=["GET", "POST"])
     @login_required
     def change_password():
