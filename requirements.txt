@@ -1,41 +1,21 @@
 # ---- Core web framework
 Flask>=3.0,<4.0
-Jinja2>=3.1,<4.0
 
 # ---- Database & ORM
 SQLAlchemy>=2.0,<3.0
 Flask-SQLAlchemy>=3.1,<4.0
 
-# ---- Migrations
-Flask-Migrate>=4.0,<5.0
-alembic>=1.13,<2.0
-
-# ---- Forms & CSRF
-Flask-WTF>=1.2,<2.0
-email-validator>=2.1,<3.0
-
-# ---- Env
+# ---- Env vars (so local .env works; Azure ignores it)
 python-dotenv>=1.0,<2.0
 
-# ---- Server
-gunicorn>=21.2,<23.0
+# ---- Security / tokens (used for password reset)
+itsdangerous>=2.2,<3.0
 
-# ---- OpenAI
-openai==1.14.3
+# ---- MFA (we kept your TOTP routes)
+pyotp>=2.9.0,<3.0
 
-# ---- Security / tokens
-itsdangerous==2.2.0
-pyotp==2.9.0
-
-# ---- HTTP client (needed by authlib)
-requests>=2.31.0
-
-# ---- Auth0 / OAuth
+# ---- Optional OAuth (so Auth0 part in app.py won't crash if you set the env vars)
 authlib>=1.3,<2.0
 
-# ---- Email for Flask
-Flask-Mail>=0.9.1
-
-# ---- QR code for MFA
-qrcode>=7.4,<8.0
-Pillow>=10.0,<11.0
+# ---- Production server for Azure Linux
+gunicorn>=21.2,<23.0
