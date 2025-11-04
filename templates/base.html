@@ -26,17 +26,29 @@
         padding: 0 1.5rem;
       }
       .brand {
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
       }
       .brand a {
         color: #fff;
         text-decoration: none;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+      }
+      .brand-logo {
+        height: 30px;
+        width: auto;
+        display: block;
       }
       .top-right {
         display: flex;
         gap: 0.75rem;
         align-items: center;
+      }
+      .user-chip {
+        font-size: 0.7rem;
+        opacity: 0.85;
       }
       .logout-btn {
         background: #f97316;
@@ -67,9 +79,13 @@
   </head>
   <body>
     <header>
-      <div class="brand"><a href="{{ url_for('dashboard') }}">MealMind</a></div>
-      {% if current_user %}
+      <div class="brand">
+        <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="MealMind" class="brand-logo">
+        <a href="{{ url_for('dashboard') }}">MealMind</a>
+      </div>
+      {% if user %}
         <div class="top-right">
+          <span class="user-chip">Welcome, {{ user.first_name or user.username }}</span>
           <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
         </div>
       {% endif %}
