@@ -186,22 +186,38 @@ def _ensure_legacy_auth_columns(app, db_):
 def create_app():
     app = Flask(__name__)
 
-    # --- CONFIG ---
-    instance_dir = os.path.join(os.getcwd(), "instance")
-    os.makedirs(instance_dir, exist_ok=True)
-    local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
+    # ---- figure out where to put the SQLite file ----
+    # 1) If Azure env sets SQLALCHEMY_DATABASE_URI, use it
+    # 2) otherwise, use /home/site/wwwroot/app.db (Azure-writable)
+    # 3) otherwise, local ./instance/app.db for local dev
+    env_uri = os.getenv("SQLALCHEMY_DATABASE_URI") or os.getenv("DATABASE_URL")
 
-    db_uri = (
-        os.getenv("SQLALCHEMY_DATABASE_URI")
-        or os.getenv("DATABASE_URL")
-        or local_sqlite
-    )
+    if env_uri and env_uri.startswith("sqlite:///"):
+        # e.g. sqlite:////home/site/data/app.db  OR sqlite:////home/site/wwwroot/app.db
+        db_path = env_uri.replace("sqlite:///", "")
+        db_dir = os.path.dirname(db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+        db_uri = env_uri
+    else:
+        # prefer Azure-friendly path
+        azure_dir = "/home/site/wwwroot"
+        if os.path.exists(azure_dir):
+            os.makedirs(azure_dir, exist_ok=True)
+            db_uri = "sqlite:///" + os.path.join(azure_dir, "app.db")
+        else:
+            # local fallback
+            instance_dir = os.path.join(os.getcwd(), "instance")
+            os.makedirs(instance_dir, exist_ok=True)
+            db_uri = "sqlite:///" + os.path.join(instance_dir, "app.db")
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = (
         os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
     )
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
 
     # optional Auth0
     AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
@@ -218,15 +234,24 @@ def create_app():
             server_metadata_url=f"https://{AUTH0_DOMAIN}/.well-known/openid-configuration",
         )
 
-    app.config["TEMPLATES_AUTO_RELOAD"] = True
-    app.jinja_env.auto_reload = True
-
-    # --- DB init ---
+    # init DB
     db.init_app(app)
     with app.app_context():
         db.create_all()
         _ensure_user_columns(app, db)
         _ensure_legacy_auth_columns(app, db)
+
+    # make helper available to routes below
+    app.jinja_env.globals["age"] = _calc_age
+
+    # store auth0 object on app so routes can reach it
+    app.auth0 = auth0
+
+    # (the rest of your routes stay the same…)
+    # return app at the very end of the big function
+    # ...
+    return app
+
 
     # helper in Jinja
     app.jinja_env.globals["age"] = _calc_age
