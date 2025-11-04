@@ -448,28 +448,28 @@ def create_app():
         return render_template("dashboard.html", user=user)
 
     @app.route("/login")
-def login():
-    return auth0.authorize_redirect(
-        redirect_uri=url_for("callback", _external=True)
-    )
+    def login():
+        return auth0.authorize_redirect(
+            redirect_uri=url_for("callback", _external=True)
+        )
 
-@app.route("/callback")
-def callback():
-    token = auth0.authorize_access_token()
-    userinfo = token["userinfo"]
-    session["user"] = {
-        "name": userinfo.get("name"),
-        "email": userinfo.get("email"),
-        "sub": userinfo.get("sub"),
-    }
-    return redirect(url_for("dashboard"))  # or your main page
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(
-        f"https://{AUTH0_DOMAIN}/v2/logout?returnTo={url_for('index', _external=True)}&client_id={AUTH0_CLIENT_ID}"
-    )
+    @app.route("/callback")
+    def callback():
+        token = auth0.authorize_access_token()
+        userinfo = token["userinfo"]
+        session["user"] = {
+            "name": userinfo.get("name"),
+            "email": userinfo.get("email"),
+            "sub": userinfo.get("sub"),
+        }
+        return redirect(url_for("dashboard"))  # or your main page
+    
+    @app.route("/logout")
+    def logout():
+        session.clear()
+        return redirect(
+            f"https://{AUTH0_DOMAIN}/v2/logout?returnTo={url_for('index', _external=True)}&client_id={AUTH0_CLIENT_ID}"
+        )
 
 
 
