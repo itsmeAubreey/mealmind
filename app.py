@@ -2,10 +2,12 @@
 import os
 from datetime import datetime, date
 from functools import wraps
+from io import StringIO
+import csv
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, flash
+    session, flash, Response
 )
 from sqlalchemy import or_
 
@@ -280,6 +282,45 @@ def create_app():
         if show == "low":
             items = [x for x in items if x["is_low"]]
         return render_template("inventory_list.html", items=items, q=q, show=show)
+
+    # NEW: inventory_export because your template calls it
+    @app.route("/inventory/export")
+    @app.route("/inventory/export.csv")
+    @login_required
+    def inventory_export():
+        q = (request.args.get("q") or "").strip()
+        status = (request.args.get("status") or "all").strip().lower()
+
+        query = InventoryItem.query
+        if q:
+            query = query.filter(InventoryItem.name.ilike(f"%{q}%"))
+        rows = query.order_by(InventoryItem.name).all()
+
+        filtered = []
+        for it in rows:
+            qty = it.quantity or 0.0
+            thr = it.low_stock_threshold or 0.0
+            is_low = (qty <= thr) if it.low_stock_threshold is not None else False
+            if status == "low" and not is_low:
+                continue
+            filtered.append(it)
+
+        out = StringIO()
+        writer = csv.writer(out)
+        writer.writerow(["Name", "Quantity", "Unit", "Low stock threshold"])
+        for it in filtered:
+            writer.writerow([
+                it.name,
+                it.quantity or 0,
+                it.unit or "",
+                it.low_stock_threshold if it.low_stock_threshold is not None else "",
+            ])
+        csv_data = out.getvalue()
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment;filename=inventory.csv"},
+        )
 
     @app.route("/inventory/new", methods=["GET", "POST"])
     @login_required
