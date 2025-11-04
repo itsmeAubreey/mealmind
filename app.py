@@ -1,6 +1,5 @@
 import os
 import csv
-import requests
 from io import StringIO
 from datetime import datetime, date, timedelta
 from functools import wraps
@@ -99,24 +98,36 @@ def create_app():
 
     # ... inside create_app() ...
 
-    @app.route("/chat", methods=["POST"])
+        @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
+        # try to import requests only when this endpoint is hit
+        try:
+            import requests  # local import so the app can start even if it's missing
+        except ImportError:
+            return jsonify({
+                "reply": "Chat is configured, but the server doesn't have the 'requests' package installed."
+            }), 500
+
         data = request.get_json(force=True) or {}
         user_message = (data.get("message") or "").strip()
         if not user_message:
             return jsonify({"reply": "Please type something."})
 
-        # pull from environment (set these in Azure App Service)
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "https://mealm-mhl58qts-eastus2.cognitiveservices.azure.com/")
+        endpoint = os.getenv(
+            "AZURE_OPENAI_ENDPOINT",
+            "https://mealm-mhl58qts-eastus2.cognitiveservices.azure.com/",
+        )
         key = os.getenv("AZURE_OPENAI_KEY")
         deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "mealmind-chat")
 
         if not key:
             return jsonify({"reply": "Chat is not configured on the server."}), 500
 
-        # Azure REST URL (matches the SDK snippet in your screenshot)
-        url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version=2024-12-01-preview"
+        url = (
+            f"{endpoint}openai/deployments/{deployment}/chat/completions"
+            "?api-version=2024-12-01-preview"
+        )
 
         headers = {
             "Content-Type": "application/json",
@@ -124,7 +135,10 @@ def create_app():
         }
         payload = {
             "messages": [
-                {"role": "system", "content": "You are MealMind assistant. Be concise and helpful."},
+                {
+                    "role": "system",
+                    "content": "You are MealMind assistant. Be concise and helpful.",
+                },
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.6,
@@ -137,7 +151,7 @@ def create_app():
             body = resp.json()
             reply = body["choices"][0]["message"]["content"]
             return jsonify({"reply": reply})
-        except Exception:
+        except Exception as e:
             return jsonify({"reply": "Sorry, I can’t reach Azure OpenAI right now."}), 500
 
     # ---------------- AUTH ----------------
