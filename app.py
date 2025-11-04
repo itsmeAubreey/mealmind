@@ -1,16 +1,16 @@
-# app.py — MealMind / Flask app (fixed)
+# app.py — MealMind / Flask app (final merged + fixed)
+# - Local login (form) by default
+# - Optional Auth0 login if env vars + authlib available
 # - Residents, Inventory, Menu (legacy + builder + scheduler + planned), Staff
 # - Forgot password + simple MFA (TOTP)
 #
-# Required App Service settings:
+# Required App Service settings (or .env for local):
 #   SECRET_KEY
 #   SQLALCHEMY_DATABASE_URI (e.g., sqlite:////home/site/data/app.db)
 #   SQLALCHEMY_TRACK_MODIFICATIONS=False
-#   FLASK_ENV=production
-#   FLASK_DEBUG=0
-#   SCM_DO_BUILD_DURING_DEPLOYMENT=1
 #
-# Optional SMTP (for real emails; otherwise we just log the email body):
+# Optional:
+#   AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET
 #   SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_USE_TLS=1
 
 import os
@@ -19,26 +19,30 @@ import csv
 from functools import wraps
 from datetime import datetime, timedelta, date
 from collections import defaultdict
-from werkzeug.security import check_password_hash
-from authlib.integrations.flask_client import OAuth
 
-import pyotp
+from werkzeug.security import check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, send_file, flash, jsonify
+    session, flash, jsonify
 )
 from sqlalchemy import or_, func, inspect, text
 
-# Optional .env for local dev
+# try to load .env locally
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
 
-# CSRF-exempt fallback if Flask-WTF isn't installed
+# optional auth0 (don't break if not installed)
+try:
+    from authlib.integrations.flask_client import OAuth
+except Exception:
+    OAuth = None
+
+# optional CSRF-exempt fallback
 try:
     from flask_wtf.csrf import csrf_exempt  # noqa
 except Exception:
@@ -81,19 +85,6 @@ def model_has_column(model, name):
     except Exception:
         return False
 
-def register_age_helper(app):
-    app.jinja_env.globals["age"] = _calc_age
-
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if "user" not in session:
-            return redirect(url_for("login"))
-        return f(*args, **kwargs)
-    return decorated
-
-
-# ---------- Password Reset + MFA helpers ----------
 def _reset_signer(secret_key: str):
     return URLSafeTimedSerializer(secret_key, salt="mealmind-password-reset")
 
@@ -117,6 +108,9 @@ def _verify_password(stored: str, provided: str) -> bool:
         pass
     return stored == provided
 
+# MFA helpers
+import pyotp
+
 def totp_from_secret(secret: str) -> pyotp.TOTP | None:
     return pyotp.TOTP(secret) if secret else None
 
@@ -131,10 +125,11 @@ def send_email(to_addr: str, subject: str, body: str):
     host = os.getenv("SMTP_HOST")
     port = int(os.getenv("SMTP_PORT") or 0)
     user = os.getenv("SMTP_USERNAME")
-    pwd  = os.getenv("SMTP_PASSWORD")
+    pwd = os.getenv("SMTP_PASSWORD")
     use_tls = os.getenv("SMTP_USE_TLS") == "1"
 
     if not host or not port:
+        # dev / demo mode — just print to console
         print("\n=== Simulated email ===")
         print(f"TO: {to_addr}\nSUBJECT: {subject}\n\n{body}")
         print("=======================\n")
@@ -172,8 +167,8 @@ def _ensure_user_columns(app, db_):
                 for s in stmts:
                     conn.execute(s)
 
-# (optional) compatibility columns used by earlier drafts
 def _ensure_legacy_auth_columns(app, db_):
+    # tolerate earlier drafts
     with app.app_context():
         try:
             with db_.engine.begin() as con:
@@ -188,11 +183,10 @@ def _ensure_legacy_auth_columns(app, db_):
         except Exception:
             pass
 
-# ----------------------- app factory -----------------------
 def create_app():
     app = Flask(__name__)
 
-    # --- Configure FIRST ---
+    # --- CONFIG ---
     instance_dir = os.path.join(os.getcwd(), "instance")
     os.makedirs(instance_dir, exist_ok=True)
     local_sqlite = "sqlite:///" + os.path.join(instance_dir, "app.db")
@@ -208,44 +202,45 @@ def create_app():
         os.getenv("SQLALCHEMY_TRACK_MODIFICATIONS", "False").lower() == "true"
     )
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
+
+    # optional Auth0
     AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
     AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
-    
-    oauth = OAuth(app)
-    auth0 = oauth.register(
-        "auth0",
-        client_id=AUTH0_CLIENT_ID,
-        client_secret=AUTH0_CLIENT_SECRET,
-        client_kwargs={"scope": "openid profile email"},
-        server_metadata_url=f"https://{AUTH0_DOMAIN}/.well-known/openid-configuration",
-    )
+    auth0 = None
+    if OAuth and AUTH0_DOMAIN and AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET:
+        oauth = OAuth(app)
+        auth0 = oauth.register(
+            "auth0",
+            client_id=AUTH0_CLIENT_ID,
+            client_secret=AUTH0_CLIENT_SECRET,
+            client_kwargs={"scope": "openid profile email"},
+            server_metadata_url=f"https://{AUTH0_DOMAIN}/.well-known/openid-configuration",
+        )
 
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
 
-    
-
-    # --- THEN init DB and create tables ---
+    # --- DB init ---
     db.init_app(app)
     with app.app_context():
         db.create_all()
-        _ensure_user_columns(app, db)         # add mfa_secret, mfa_enabled
-        _ensure_legacy_auth_columns(app, db)  # tolerate older drafts
+        _ensure_user_columns(app, db)
+        _ensure_legacy_auth_columns(app, db)
 
-    register_age_helper(app)
+    # helper in Jinja
+    app.jinja_env.globals["age"] = _calc_age
 
     INVENTORY_UNITS = [
         "kg", "g", "bags", "cases", "dozen", "cans", "liters", "jugs",
         "bunches", "heads", "loaves", "packs", "bottles", "jars", "boxes", "pcs"
     ]
-    ROLES = ["Manager", "Cook", "Dietitian", "Dietary Aide"]
 
     @app.context_processor
     def inject_current_user():
         return {"current_user": session.get("user")}
 
-    # ---------- guards ----------
+    # ------------- auth/session helpers -------------
     def login_required(f):
         @wraps(f)
         def w(*a, **kw):
@@ -254,7 +249,6 @@ def create_app():
             return f(*a, **kw)
         return w
 
-    # ---------- session helpers ----------
     def _finalize_login(user):
         session["user"] = {
             "id": user.id,
@@ -269,30 +263,23 @@ def create_app():
 
     def login_user(user):
         _finalize_login(user)
+        # force PW change?
         if session["user"].get("must_change_password"):
             return redirect(url_for("change_password"))
+        # force MFA?
         if session["user"].get("mfa_enabled") and not session["user"].get("mfa_verified"):
+            # we set this so /mfa knows who to check
+            session["pre_2fa_uid"] = user.id
             return redirect(url_for("mfa_verify"))
         return redirect(url_for("dashboard"))
 
     def current_role():
         return session.get("user", {}).get("role")
 
-    def roles_required(*roles):
-        def decorate(f):
-            @wraps(f)
-            def wrapped(*a, **kw):
-                r = current_role()
-                if r not in roles:
-                    flash("You do not have access to that page.", "error")
-                    return redirect(url_for("dashboard"))
-                return f(*a, **kw)
-            return wrapped
-        return decorate
-
     @app.before_request
     def enforce_pw_change():
-        allowed = {"login", "logout", "change_password", "static", "healthz", "forgot_password", "reset_password"}
+        # allow these even if password must change
+        allowed = {"login", "logout", "change_password", "static", "healthz", "forgot_password", "reset_password", "home", "index"}
         u = session.get("user")
         if not u:
             return
@@ -301,28 +288,79 @@ def create_app():
             if request.endpoint not in allowed:
                 return redirect(url_for("change_password"))
 
-    # ---------- auth ----------
-   # @app.route("/login", methods=["GET", "POST"])
-   # def login():
-   #     if request.method == "POST":
-   #         username = (request.form.get("username") or "").strip().lower()
-   #         password = (request.form.get("password") or "").strip()
-   #         user = User.query.filter(
-   #             or_(User.username.ilike(username), User.employee_id.ilike(username))
-  #          ).first()
+    # ------------- ROUTES: basic / auth -------------
+    @app.route("/")
+    def home():
+        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
 
-   #         stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
-  #          if user and _verify_password(stored, password):
-  #              # MFA gate if enabled
-   #             if getattr(user, "mfa_secret", None):
-   #                 session["pre_2fa_uid"] = user.id
-   #                 return redirect(url_for("mfa_verify"))
-                # normal login
-   #             return login_user(user)
+    @app.route("/index")
+    def index():
+        # legacy name some links used
+        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
 
- #           flash("Invalid credentials.", "error")
-  #      return render_template("login.html")
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        # if Auth0 configured, go through Auth0
+        if auth0 and request.method == "GET":
+            return auth0.authorize_redirect(
+                redirect_uri=url_for("callback", _external=True)
+            )
 
+        # local form login (default)
+        if request.method == "POST":
+            username = (request.form.get("username") or "").strip().lower()
+            password = (request.form.get("password") or "").strip()
+            user = User.query.filter(
+                or_(User.username.ilike(username), User.employee_id.ilike(username))
+            ).first()
+
+            stored = getattr(user, "password_hash", None) or getattr(user, "password", None)
+            if user and _verify_password(stored, password):
+                # if user has MFA, set pre_2fa_uid
+                if getattr(user, "mfa_secret", None):
+                    session["pre_2fa_uid"] = user.id
+                    return redirect(url_for("mfa_verify"))
+                return login_user(user)
+
+            flash("Invalid credentials.", "error")
+        return render_template("login.html")
+
+    # Auth0 callback (only if we set it up)
+    if OAuth:
+        @app.route("/callback")
+        def callback():
+            if not (OAuth and auth0):
+                return redirect(url_for("login"))
+            token = auth0.authorize_access_token()
+            userinfo = token["userinfo"]
+            # minimal session for auth0
+            session["user"] = {
+                "id": userinfo.get("sub"),
+                "username": userinfo.get("email"),
+                "role": "Manager",  # or decide some default
+                "first_name": userinfo.get("name", ""),
+                "last_name": "",
+                "mfa_enabled": False,
+                "mfa_verified": True,
+                "must_change_password": False,
+            }
+            return redirect(url_for("dashboard"))
+
+    @app.route("/logout")
+    def logout():
+        # local logout
+        session.clear()
+        # if we had auth0 and want to hit their logout, we could,
+        # but to keep it simple we just go to login
+        return redirect(url_for("login"))
+
+    @app.route("/dashboard")
+    @login_required
+    def dashboard():
+        user = session.get("user", {})
+        return render_template("dashboard.html", user=user)
+
+    # ------------- change password -------------
     @app.route("/change-password", methods=["GET", "POST"])
     @login_required
     def change_password():
@@ -344,7 +382,7 @@ def create_app():
                 return redirect(url_for("dashboard"))
         return render_template("change_password.html", error=error)
 
-    # ---------- Forgot / Reset ----------
+    # ------------- Forgot / Reset password -------------
     @app.route("/forgot", methods=["GET", "POST"])
     def forgot_password():
         if request.method == "POST":
@@ -393,7 +431,7 @@ def create_app():
                 return redirect(url_for("login"))
         return render_template("reset.html")
 
-    # ---------- MFA ----------
+    # ------------- MFA -------------
     @app.route("/mfa/setup", methods=["GET", "POST"])
     @login_required
     def mfa_setup():
@@ -428,54 +466,23 @@ def create_app():
         if request.method == "POST":
             code = (request.form.get("code") or "").strip()
             if user.mfa_secret and totp_from_secret(user.mfa_secret).verify(code, valid_window=1):
+                # mark MFA verified
+                session["user"] = {
+                    **session.get("user", {}),
+                    "id": user.id,
+                    "username": user.username,
+                    "role": user.role,
+                    "mfa_enabled": True,
+                    "mfa_verified": True,
+                }
                 session.pop("pre_2fa_uid", None)
-                return login_user(user)
+                return redirect(url_for("dashboard"))
             flash("Invalid code.", "error")
 
         return render_template("mfa_verify.html")
 
-    # ---------- home / dashboard ----------
-    @app.route("/")
-    def home():
-        # send logged-in users straight to dashboard
-        return redirect(url_for("dashboard") if "user" in session else url_for("login"))
-    
-    @app.route("/dashboard")
-    @login_required
-    def dashboard():
-        # this is the important part: pass the user from session to the template
-        user = session.get("user", {})
-        return render_template("dashboard.html", user=user)
-
-    @app.route("/login")
-    def login():
-        return auth0.authorize_redirect(
-            redirect_uri=url_for("callback", _external=True)
-        )
-
-    @app.route("/callback")
-    def callback():
-        token = auth0.authorize_access_token()
-        userinfo = token["userinfo"]
-        session["user"] = {
-            "name": userinfo.get("name"),
-            "email": userinfo.get("email"),
-            "sub": userinfo.get("sub"),
-        }
-        return redirect(url_for("dashboard"))  # or your main page
-    
-    @app.route("/logout")
-    def logout():
-        session.clear()
-        return redirect(
-            f"https://{AUTH0_DOMAIN}/v2/logout?returnTo={url_for('index', _external=True)}&client_id={AUTH0_CLIENT_ID}"
-        )
-
-
-
-
     # ======================================================================
-    # Residents
+    # RESIDENTS
     # ======================================================================
     @app.route("/residents")
     @login_required
@@ -545,7 +552,6 @@ def create_app():
         if current_role() not in ("Manager", "Dietitian"):
             flash("You do not have access to that page.", "error")
             return redirect(url_for("dashboard"))
-
         r = Resident.query.get_or_404(rid)
         if request.method == "POST":
             first_name = (request.form.get("first_name") or "").strip()
@@ -574,10 +580,8 @@ def create_app():
             r.medications = meds
             r.fluids     = fluids
             r.notes      = notes
-
             if model_has_column(Resident, "age") and birthday:
                 r.age = _calc_age(birthday)
-
             db.session.commit()
             flash("Resident updated.", "success")
             return redirect(url_for("residents_list"))
@@ -615,7 +619,7 @@ def create_app():
         return render_template("resident_print.html", r=r, auto_print=auto)
 
     # ======================================================================
-    # Staff (Manager only)
+    # STAFF (Manager only)
     # ======================================================================
     @app.route("/staff")
     @login_required
@@ -742,7 +746,7 @@ def create_app():
         return redirect(url_for("staff_list"))
 
     # ======================================================================
-    # Inventory
+    # INVENTORY
     # ======================================================================
     @app.route("/inventory")
     @login_required
@@ -893,7 +897,7 @@ def create_app():
         return _send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
 
     # ======================================================================
-    # Legacy One-Day Menu  → /menu/legacy (kept for continuity)
+    # Legacy one-day menu (keep)
     # ======================================================================
     @app.route("/menu/legacy", methods=["GET", "POST"])
     @login_required
@@ -1001,7 +1005,7 @@ def create_app():
             return f"<h3>Menu for {day:%Y-%m-%d}</h3>", 200
 
     # ======================================================================
-    # Menu Hub, Builder, API, Scheduler & Weekly Planned view
+    # Menu Hub, Builder, API, Scheduler & weekly planned view
     # ======================================================================
     @app.route("/menu")
     @login_required
@@ -1054,8 +1058,8 @@ def create_app():
                 inv = InventoryItem.query.get(int(inv_id))
                 if not inv:
                     continue
-                q = _to_float(qty, 0.0)
-                m.ingredients.append(MenuIngredient(inventory_id=inv.id, quantity=q))
+                qv = _to_float(qty, 0.0)
+                m.ingredients.append(MenuIngredient(inventory_id=inv.id, quantity=qv))
 
             db.session.commit()
             flash(f'Menu "{m.title}" added.', "success")
@@ -1107,8 +1111,8 @@ def create_app():
                     inv = InventoryItem.query.get(int(inv_id))
                     if not inv:
                         continue
-                    q = _to_float(qty, 0.0)
-                    m.ingredients.append(MenuIngredient(inventory_id=inv.id, quantity=q))
+                    qv = _to_float(qty, 0.0)
+                    m.ingredients.append(MenuIngredient(inventory_id=inv.id, quantity=qv))
 
                 db.session.commit()
                 flash(f'Menu "{m.title}" updated.', "success")
@@ -1169,6 +1173,7 @@ def create_app():
             selected_date = _parse_date(request.form.get("date")) or date.today()
             notes = (request.form.get("notes") or "").strip()
 
+            # which menus picked
             chosen = {}
             for meal_type in ["Breakfast", "Lunch", "Dinner"]:
                 mid = request.form.get(f"{meal_type}_menu")
@@ -1179,6 +1184,7 @@ def create_app():
                 flash("No menus selected; nothing saved.", "error")
                 return redirect(url_for("menu_scheduler"))
 
+            # pre-check inventory
             need_map, name_map = {}, {}
             for meal_type, mid in chosen.items():
                 base_menu = Menu.query.get(mid)
@@ -1204,8 +1210,10 @@ def create_app():
                 flash("Not saved. Issues: " + "; ".join(insuff), "error")
                 return redirect(url_for("menu_scheduler"))
 
+            # ok, save schedule and deduct
             deductions = []
             for meal_type, mid in chosen.items():
+                # clear existing schedule for that date+meal
                 MenuSchedule.query.filter_by(date=selected_date, meal_type=meal_type).delete(synchronize_session=False)
 
                 sched = MenuSchedule(date=selected_date, meal_type=meal_type, menu_id=mid, notes=notes)
@@ -1246,7 +1254,7 @@ def create_app():
             suppress_global_flash=True
         )
 
-    # ---------- Minimal “assistant” chat endpoint ----------
+    # ---------- tiny assistant endpoint ----------
     def _assistant_reply(text: str) -> str:
         q = (text or "").strip().lower()
         if not q:
@@ -1290,6 +1298,7 @@ def create_app():
         bot_msg = _assistant_reply(user_msg)
         return jsonify({"ok": True, "reply": bot_msg})
 
+    # ---------- planned weekly view ----------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
@@ -1397,10 +1406,15 @@ def create_app():
 
         return render_template("planned_menu_view.html", day_value=d, blocks=detail)
 
+    # health
+    @app.route("/healthz")
+    def healthz():
+        return "ok", 200
+
     return app
 
 
-# ---------------- module-level app for gunicorn ----------------
+# module-level app for gunicorn / flask run
 app = create_app()
 with app.app_context():
     db.create_all()
@@ -1422,10 +1436,6 @@ with app.app_context():
         db.session.add(mgr)
         db.session.commit()
         print("Seeded manager (manager / 1234)")
-
-@app.route("/healthz")
-def healthz():
-    return "ok", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")),
