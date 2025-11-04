@@ -205,48 +205,142 @@ def create_app():
         r = Resident.query.get_or_404(rid)
         return render_template("resident_print.html", resident=r)
 
-    # ---------- staff ----------
+       # -------------------------------------------------
+    # staff
+    # -------------------------------------------------
+    def _staff_roles():
+        # match what your template shows
+        return ["Manager", "Cook", "Dietary Aide", "Dietitian"]
+
     @app.route("/staff")
     @login_required
     def staff_list():
-        users = User.query.order_by(User.username.asc()).all()
-        return render_template("staff_list.html", users=users)
+        q = (request.args.get("q") or "").strip()
+        role_filter = (request.args.get("role") or "all").strip()
+
+        query = User.query
+        if q:
+            like = f"%{q}%"
+            query = query.filter(
+                or_(
+                    User.first_name.ilike(like),
+                    User.last_name.ilike(like),
+                    User.username.ilike(like),
+                    User.email.ilike(like),
+                    User.employee_id.ilike(like),
+                )
+            )
+        if role_filter != "all":
+            query = query.filter(User.role == role_filter)
+
+        users = query.order_by(
+            User.first_name.asc(), User.last_name.asc(), User.username.asc()
+        ).all()
+
+        roles = _staff_roles()
+        return render_template(
+            "staff_list.html",
+            users=users,
+            q=q,
+            role_filter=role_filter,
+            roles=roles,
+        )
 
     @app.route("/staff/new", methods=["GET", "POST"])
     @login_required
     def staff_new():
+        roles = _staff_roles()
+        errors = []
+        values = {
+            "first_name": "",
+            "last_name": "",
+            "username": "",
+            "employee_id": "",
+            "email": "",
+            "role": "Dietary Aide",
+        }
+
         if request.method == "POST":
-            u = User(
-                username=(request.form.get("username") or "").strip().lower(),
-                employee_id=request.form.get("employee_id") or "",
-                email=request.form.get("email") or "",
-                first_name=request.form.get("first_name") or "",
-                last_name=request.form.get("last_name") or "",
-                role=request.form.get("role") or "Dietary Aide",
-            )
-            pw = request.form.get("password") or "1234"
-            u.set_password(pw)
-            db.session.add(u)
-            db.session.commit()
-            flash("Staff added.", "success")
-            return redirect(url_for("staff_list"))
-        return render_template("staff_form.html", user=None)
+            values["first_name"] = request.form.get("first_name", "").strip()
+            values["last_name"] = request.form.get("last_name", "").strip()
+            values["username"] = request.form.get("username", "").strip().lower()
+            values["employee_id"] = request.form.get("employee_id", "").strip()
+            values["email"] = request.form.get("email", "").strip()
+            values["role"] = request.form.get("role", "Dietary Aide").strip()
+            temp_password = request.form.get("temp_password", "").strip()
+
+            if not values["username"]:
+                errors.append("Username is required.")
+            if not temp_password:
+                temp_password = "1234"
+
+            if not errors:
+                u = User(
+                    username=values["username"],
+                    employee_id=values["employee_id"],
+                    email=values["email"],
+                    first_name=values["first_name"],
+                    last_name=values["last_name"],
+                    role=values["role"],
+                )
+                u.set_password(temp_password)
+                db.session.add(u)
+                db.session.commit()
+                flash("Staff added.", "success")
+                return redirect(url_for("staff_list"))
+
+        return render_template(
+            "staff_form.html",
+            mode="new",
+            values=values,
+            errors=errors,
+            roles=roles,
+        )
 
     @app.route("/staff/<int:uid>/edit", methods=["GET", "POST"])
     @login_required
     def staff_edit(uid):
+        roles = _staff_roles()
         u = User.query.get_or_404(uid)
+        errors = []
+        values = {
+            "first_name": u.first_name or "",
+            "last_name": u.last_name or "",
+            "username": u.username or "",
+            "employee_id": u.employee_id or "",
+            "email": u.email or "",
+            "role": u.role or "Dietary Aide",
+        }
+
         if request.method == "POST":
-            u.username = (request.form.get("username") or u.username).strip().lower()
-            u.employee_id = request.form.get("employee_id") or ""
-            u.email = request.form.get("email") or ""
-            u.first_name = request.form.get("first_name") or ""
-            u.last_name = request.form.get("last_name") or ""
-            u.role = request.form.get("role") or u.role
-            db.session.commit()
-            flash("Staff updated.", "success")
-            return redirect(url_for("staff_list"))
-        return render_template("staff_form.html", user=u)
+            values["first_name"] = request.form.get("first_name", "").strip()
+            values["last_name"] = request.form.get("last_name", "").strip()
+            values["username"] = request.form.get("username", "").strip().lower()
+            values["employee_id"] = request.form.get("employee_id", "").strip()
+            values["email"] = request.form.get("email", "").strip()
+            values["role"] = request.form.get("role", "Dietary Aide").strip()
+
+            if not values["username"]:
+                errors.append("Username is required.")
+
+            if not errors:
+                u.first_name = values["first_name"]
+                u.last_name = values["last_name"]
+                u.username = values["username"]
+                u.employee_id = values["employee_id"]
+                u.email = values["email"]
+                u.role = values["role"]
+                db.session.commit()
+                flash("Staff updated.", "success")
+                return redirect(url_for("staff_list"))
+
+        return render_template(
+            "staff_form.html",
+            mode="edit",
+            values=values,
+            errors=errors,
+            roles=roles,
+        )
 
     @app.route("/staff/<int:uid>/reset", methods=["GET", "POST"])
     @login_required
@@ -259,6 +353,7 @@ def create_app():
             flash("Password reset.", "success")
             return redirect(url_for("staff_list"))
         return render_template("reset.html", user=u)
+
 
     # ---------- inventory ----------
     @app.route("/inventory")
