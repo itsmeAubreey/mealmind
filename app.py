@@ -16,7 +16,7 @@ from flask import (
 )
 from sqlalchemy import or_
 
-# your models.py — you already uploaded this
+# import your models
 from models import (
     db,
     User,
@@ -28,9 +28,7 @@ from models import (
     MenuScheduleItem,
 )
 
-# -------------------------------------------------
-# helpers
-# -------------------------------------------------
+# ---------- helpers ----------
 def _parse_date(s: str):
     if not s:
         return None
@@ -60,14 +58,12 @@ def login_required(view):
     return wrapped
 
 
-# -------------------------------------------------
-# app factory
-# -------------------------------------------------
+# ---------- app factory ----------
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
-    # SQLite in a place Azure can write
+    # DB path that works on Azure
     azure_root = "/home/site/wwwroot"
     if os.path.exists(azure_root):
         db_path = os.path.join(azure_root, "app.db")
@@ -80,7 +76,7 @@ def create_app():
     db.init_app(app)
     with app.app_context():
         db.create_all()
-        # seed one manager if empty
+        # seed default user if empty
         if not User.query.first():
             u = User(
                 username="manager",
@@ -91,16 +87,14 @@ def create_app():
             u.set_password("1234")
             db.session.add(u)
             db.session.commit()
-            print("Seeded manager / 1234")
 
-    # inject current_user for navbar etc.
+    # ⭐ fix: inject both current_user AND user so your templates work
     @app.context_processor
     def inject_user():
-        return {"current_user": session.get("user")}
+        u = session.get("user")
+        return {"current_user": u, "user": u}
 
-    # -------------------------------------------------
-    # auth
-    # -------------------------------------------------
+    # ---------- auth ----------
     @app.route("/")
     def home():
         if "user" in session:
@@ -119,7 +113,6 @@ def create_app():
 
             ok = False
             if user:
-                # your model has set_password/check_password
                 try:
                     ok = user.check_password(password)
                 except Exception:
@@ -144,18 +137,13 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
-    # -------------------------------------------------
-    # dashboard
-    # -------------------------------------------------
+    # ---------- dashboard ----------
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        # you already have dashboard.html in repo
         return render_template("dashboard.html")
 
-    # -------------------------------------------------
-    # residents
-    # -------------------------------------------------
+    # ---------- residents ----------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -217,9 +205,7 @@ def create_app():
         r = Resident.query.get_or_404(rid)
         return render_template("resident_print.html", resident=r)
 
-    # -------------------------------------------------
-    # staff
-    # -------------------------------------------------
+    # ---------- staff ----------
     @app.route("/staff")
     @login_required
     def staff_list():
@@ -274,9 +260,7 @@ def create_app():
             return redirect(url_for("staff_list"))
         return render_template("reset.html", user=u)
 
-    # -------------------------------------------------
-    # inventory
-    # -------------------------------------------------
+    # ---------- inventory ----------
     @app.route("/inventory")
     @login_required
     def inventory_list():
@@ -380,7 +364,6 @@ def create_app():
     @app.route("/inventory/export")
     @login_required
     def inventory_export():
-        # this is just to satisfy the old button if it's still in template
         q = (request.args.get("q") or "").strip()
         status = (request.args.get("status") or "all").strip()
         query = InventoryItem.query
@@ -398,9 +381,7 @@ def create_app():
                 is_low = qty <= it.low_stock_threshold
             if status == "low" and not is_low:
                 continue
-            w.writerow(
-                [it.name, qty, it.unit or "", it.low_stock_threshold or ""]
-            )
+            w.writerow([it.name, qty, it.unit or "", it.low_stock_threshold or ""])
 
         return Response(
             out.getvalue(),
@@ -408,28 +389,25 @@ def create_app():
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
-    # -------------------------------------------------
-    # menu hub + scheduler + planned
-    # -------------------------------------------------
+    # ---------- menu hub ----------
     @app.route("/menu")
     @login_required
     def menu_hub():
         return render_template("menu_hub.html")
 
+    # ---------- menu scheduler ----------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
-        # menus grouped by meal
-        all_menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
+        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
-        for m in all_menus:
+        for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
 
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         week_end = monday + timedelta(days=6)
 
-        # schedules in this week
         schedules = (
             MenuSchedule.query.filter(
                 MenuSchedule.date >= monday, MenuSchedule.date <= week_end
@@ -454,6 +432,7 @@ def create_app():
             inventory_items=inventory_items,
         )
 
+    # ---------- planned menus ----------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
@@ -504,9 +483,7 @@ def create_app():
             next_url=next_url,
         )
 
-    # -------------------------------------------------
-    # health
-    # -------------------------------------------------
+    # ---------- health ----------
     @app.route("/healthz")
     def healthz():
         return "ok", 200
