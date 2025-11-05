@@ -65,77 +65,85 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
-    # 1) use Azure app setting if present
+    # 1) prefer Azure app setting if present
     db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
-
     if not db_uri:
-        # 2) Azure Linux writable path
         azure_data = "/home/site/data"
         if os.path.exists(azure_data):
             db_uri = "sqlite:///" + os.path.join(azure_data, "app.db")
         else:
-            # 3) local dev
             db_uri = "sqlite:///mealmind.db"
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     db.init_app(app)
-    with app.app_context():
-        db.create_all()
-        # seed default user if none
-        if not User.query.first():
-            u = User(
+
+    # make sure manager/1234 always exists
+    def ensure_manager():
+        m = User.query.filter_by(username="manager").first()
+        if m is None:
+            m = User(
                 username="manager",
                 employee_id="00000000",
                 email="manager@example.com",
                 role="Manager",
             )
-            u.set_password("1234")
-            db.session.add(u)
+            m.set_password("1234")
+            db.session.add(m)
             db.session.commit()
+        else:
+            # old rows sometimes have no password_hash
+            if not getattr(m, "password_hash", None):
+                m.set_password("1234")
+                db.session.commit()
 
+    with app.app_context():
+        db.create_all()
+        ensure_manager()
 
-
-
-    # make {{ user }} and {{ current_user }} both work in templates
+    # make {{ user }} work in templates
     @app.context_processor
     def inject_user():
         u = session.get("user")
         return {"current_user": u, "user": u}
 
-    # ... inside create_app() ...
-
-        @app.route("/chat", methods=["POST"])
+    # ---------- CHAT (fixed env names + indentation) ----------
+    @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
-        # try to import requests only when this endpoint is hit
+        # import here so missing 'requests' won't block app startup
         try:
-            import requests  # local import so the app can start even if it's missing
+            import requests
         except ImportError:
-            return jsonify({
-                "reply": "Chat is configured, but the server doesn't have the 'requests' package installed."
-            }), 500
+            return jsonify(
+                {
+                    "reply": "Chat is configured, but the server doesn't have the 'requests' package installed."
+                }
+            ), 500
 
         data = request.get_json(force=True) or {}
         user_message = (data.get("message") or "").strip()
         if not user_message:
             return jsonify({"reply": "Please type something."})
 
+        # your Azure settings use these names:
+        # AZURE_OPENAI_API_KEY
+        # AZURE_OPENAI_ENDPOINT
+        # AZURE_OPENAI_MODEL
+        # AZURE_OPENAI_API_VERSION
         endpoint = os.getenv(
             "AZURE_OPENAI_ENDPOINT",
             "https://mealm-mhl58qts-eastus2.cognitiveservices.azure.com/",
         )
-        key = os.getenv("AZURE_OPENAI_KEY")
-        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "mealmind-chat")
+        key = os.getenv("AZURE_OPENAI_API_KEY")
+        deployment = os.getenv("AZURE_OPENAI_MODEL", "mealmind-chat")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
 
         if not key:
             return jsonify({"reply": "Chat is not configured on the server."}), 500
 
-        url = (
-            f"{endpoint}openai/deployments/{deployment}/chat/completions"
-            "?api-version=2024-12-01-preview"
-        )
+        url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version={api_version}"
 
         headers = {
             "Content-Type": "application/json",
@@ -159,8 +167,9 @@ def create_app():
             body = resp.json()
             reply = body["choices"][0]["message"]["content"]
             return jsonify({"reply": reply})
-        except Exception as e:
+        except Exception:
             return jsonify({"reply": "Sorry, I can’t reach Azure OpenAI right now."}), 500
+
 
     # ---------------- AUTH ----------------
     @app.route("/")
