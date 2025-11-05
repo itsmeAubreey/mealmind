@@ -65,19 +65,14 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
-    # 1) use Azure app setting if present
-    db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
+    # sqlite path that works on Azure
+    azure_root = "/home/site/wwwroot"
+    if os.path.exists(azure_root):
+        db_path = os.path.join(azure_root, "app.db")
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + db_path
+    else:
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///mealmind.db"
 
-    if not db_uri:
-        # 2) Azure Linux writable path
-        azure_data = "/home/site/data"
-        if os.path.exists(azure_data):
-            db_uri = "sqlite:///" + os.path.join(azure_data, "app.db")
-        else:
-            # 3) local dev
-            db_uri = "sqlite:///mealmind.db"
-
-    app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     db.init_app(app)
@@ -94,6 +89,7 @@ def create_app():
             u.set_password("1234")
             db.session.add(u)
             db.session.commit()
+
 
 
     # make {{ user }} and {{ current_user }} both work in templates
