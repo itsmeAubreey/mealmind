@@ -17,7 +17,7 @@ from flask import (
 )
 from sqlalchemy import or_
 
-# 👇 use the actual filename in your repo: models.py
+# use the actual filename in your repo
 from models import (
     db,
     User,
@@ -29,7 +29,8 @@ from models import (
     MenuScheduleItem,
 )
 
-# ---------- helpers ----------
+
+# ---------- small helpers ----------
 def _parse_date(s: str):
     if not s:
         return None
@@ -62,14 +63,38 @@ def login_required(view):
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
-    # ... your DB config here ...
 
+    # ---------- DB CONFIG (do this BEFORE db.init_app) ----------
+    db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
+    if not db_uri:
+        # Azure persistent path
+        azure_data = "/home/site/data"
+        if os.path.exists(azure_data):
+            db_uri = "sqlite:///" + os.path.join(azure_data, "app.db")
+        else:
+            db_uri = "sqlite:///mealmind.db"
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    # now init once
     db.init_app(app)
+
+    # create tables and seed manager
     with app.app_context():
         db.create_all()
-        # seed manager if needed ...
+        if not User.query.first():
+            u = User(
+                username="manager",
+                employee_id="00000000",
+                email="manager@example.com",
+                role="Manager",
+            )
+            u.set_password("1234")
+            db.session.add(u)
+            db.session.commit()
 
-    # 👇 ADD THIS PART
+    # ---------- make {{ age(...) }} available to all templates ----------
     def age_from_date(d):
         if not d:
             return ""
@@ -84,42 +109,10 @@ def create_app():
 
     @app.context_processor
     def inject_helpers():
-        # this makes {{ age(...) }} available in all templates
-        return {"age": age_from_date}
-    # 👆 END OF NEW PART
-
-    # DB location (Azure-friendly)
-    db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
-    if not db_uri:
-        azure_data = "/home/site/data"
-        if os.path.exists(azure_data):
-            db_uri = "sqlite:///" + os.path.join(azure_data, "app.db")
-        else:
-            db_uri = "sqlite:///mealmind.db"
-    app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    db.init_app(app)
-    with app.app_context():
-        db.create_all()
-        # seed manager once
-        if not User.query.first():
-            u = User(
-                username="manager",
-                employee_id="00000000",
-                email="manager@example.com",
-                role="Manager",
-            )
-            u.set_password("1234")
-            db.session.add(u)
-            db.session.commit()
-
-    @app.context_processor
-    def inject_user():
         u = session.get("user")
-        return {"current_user": u, "user": u}
+        return {"age": age_from_date, "current_user": u, "user": u}
 
-    # ---------- CHAT (optional Azure OpenAI) ----------
+    # ---------- optional Azure OpenAI chat ----------
     @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
@@ -555,7 +548,7 @@ def create_app():
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
-    # ---------- MENU HUB ----------
+    # ---------- MENU ----------
     @app.route("/menu")
     @login_required
     def menu_hub():
@@ -576,7 +569,6 @@ def create_app():
     def menu_daily_view():
         return render_template("menu_daily_view.html")
 
-    # ---------- MENU SCHEDULER ----------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
@@ -613,7 +605,6 @@ def create_app():
             inventory_items=inventory_items,
         )
 
-    # ---------- PLANNED MENUS ----------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
