@@ -103,10 +103,30 @@ def create_app():
         ensure_manager()
 
     # make {{ user }} work in templates
+      # make helpers available in templates
     @app.context_processor
-    def inject_user():
+    def inject_globals():
         u = session.get("user")
-        return {"current_user": u, "user": u}
+
+        def age(bday):
+            if not bday:
+                return ""
+            try:
+                today = date.today()
+                years = today.year - bday.year
+                # adjust if birthday not reached yet this year
+                if (today.month, today.day) < (bday.month, bday.day):
+                    years -= 1
+                return years
+            except Exception:
+                return ""
+
+        return {
+            "current_user": u,
+            "user": u,
+            "age": age,
+        }
+
 
     # ---------- CHAT (fixed env names + indentation) ----------
     @app.route("/chat", methods=["POST"])
