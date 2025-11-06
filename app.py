@@ -138,6 +138,10 @@ def create_app():
         if not endpoint or not key:
             return jsonify({"reply": "Azure OpenAI not configured."}), 500
 
+        # make sure endpoint ends with /
+        if not endpoint.endswith("/"):
+            endpoint = endpoint + "/"
+
         url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version={api_version}"
         headers = {"Content-Type": "application/json", "api-key": key}
         payload = {
@@ -557,17 +561,21 @@ def create_app():
     @app.route("/menu/builder")
     @login_required
     def menu_builder():
-        return render_template("menu_builder.html")
+        # FIX: send inventory so the dropdown isn’t empty
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        return render_template("menu_builder.html", inventory_items=inventory_items)
 
     @app.route("/menu/daily")
     @login_required
     def menu_daily():
-        return render_template("menu_daily.html")
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        return render_template("menu_daily.html", inventory_items=inventory_items)
 
     @app.route("/menu/daily/view")
     @login_required
     def menu_daily_view():
-        return render_template("menu_daily_view.html")
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
     @app.route("/menu/scheduler")
     @login_required
