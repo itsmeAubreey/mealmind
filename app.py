@@ -17,7 +17,7 @@ from flask import (
 )
 from sqlalchemy import or_
 
-# your models
+# models
 from models import (
     db,
     User,
@@ -29,8 +29,9 @@ from models import (
     MenuScheduleItem,
 )
 
-
-# ---------- small helpers ----------
+# -------------------------------------------------
+# helper funcs
+# -------------------------------------------------
 def _parse_date(s: str):
     if not s:
         return None
@@ -60,18 +61,22 @@ def login_required(view):
     return wrapped
 
 
-# ---------- app factory ----------
+# -------------------------------------------------
+# app factory
+# -------------------------------------------------
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
-    # 1) prefer Azure app setting if present
+    # 1) prefer Azure app setting (your portal screenshot)
     db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
     if not db_uri:
+        # 2) Azure Linux writable dir
         azure_data = "/home/site/data"
         if os.path.exists(azure_data):
             db_uri = "sqlite:///" + os.path.join(azure_data, "app.db")
         else:
+            # 3) local dev
             db_uri = "sqlite:///mealmind.db"
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
@@ -79,7 +84,7 @@ def create_app():
 
     db.init_app(app)
 
-    # make sure manager/1234 always exists
+    # make sure manager / 1234 always exists in THIS db
     def ensure_manager():
         m = User.query.filter_by(username="manager").first()
         if m is None:
@@ -93,7 +98,7 @@ def create_app():
             db.session.add(m)
             db.session.commit()
         else:
-            # old rows sometimes have no password_hash
+            # old rows (pre-hash) may not have password_hash
             if not getattr(m, "password_hash", None):
                 m.set_password("1234")
                 db.session.commit()
@@ -102,8 +107,9 @@ def create_app():
         db.create_all()
         ensure_manager()
 
-    # make {{ user }} work in templates
-      # make helpers available in templates
+    # -------------------------------------------------
+    # context processor (THIS fixes /residents)
+    # -------------------------------------------------
     @app.context_processor
     def inject_globals():
         u = session.get("user")
@@ -114,44 +120,38 @@ def create_app():
             try:
                 today = date.today()
                 years = today.year - bday.year
-                # adjust if birthday not reached yet this year
                 if (today.month, today.day) < (bday.month, bday.day):
                     years -= 1
                 return years
             except Exception:
                 return ""
 
-        return {
-            "current_user": u,
-            "user": u,
-            "age": age,
-        }
+        return {"current_user": u, "user": u, "age": age}
 
-
-    # ---------- CHAT (fixed env names + indentation) ----------
+    # -------------------------------------------------
+    # CHAT (uses your Azure env var names)
+    # -------------------------------------------------
     @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
-        # import here so missing 'requests' won't block app startup
+        # import here so app can start even if 'requests' is missing
         try:
             import requests
         except ImportError:
-            return jsonify(
-                {
-                    "reply": "Chat is configured, but the server doesn't have the 'requests' package installed."
-                }
-            ), 500
+            return (
+                jsonify(
+                    {
+                        "reply": "Chat is configured, but the server doesn't have the 'requests' package installed."
+                    }
+                ),
+                500,
+            )
 
         data = request.get_json(force=True) or {}
         user_message = (data.get("message") or "").strip()
         if not user_message:
             return jsonify({"reply": "Please type something."})
 
-        # your Azure settings use these names:
-        # AZURE_OPENAI_API_KEY
-        # AZURE_OPENAI_ENDPOINT
-        # AZURE_OPENAI_MODEL
-        # AZURE_OPENAI_API_VERSION
         endpoint = os.getenv(
             "AZURE_OPENAI_ENDPOINT",
             "https://mealm-mhl58qts-eastus2.cognitiveservices.azure.com/",
@@ -164,11 +164,7 @@ def create_app():
             return jsonify({"reply": "Chat is not configured on the server."}), 500
 
         url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version={api_version}"
-
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": key,
-        }
+        headers = {"Content-Type": "application/json", "api-key": key}
         payload = {
             "messages": [
                 {
@@ -190,8 +186,9 @@ def create_app():
         except Exception:
             return jsonify({"reply": "Sorry, I can’t reach Azure OpenAI right now."}), 500
 
-
-    # ---------------- AUTH ----------------
+    # -------------------------------------------------
+    # AUTH
+    # -------------------------------------------------
     @app.route("/")
     def home():
         if "user" in session:
@@ -213,7 +210,7 @@ def create_app():
                 try:
                     ok = user.check_password(password)
                 except Exception:
-                    ok = user.password == password
+                    ok = user.password == password  # legacy
 
             if user and ok:
                 session["user"] = {
@@ -234,13 +231,17 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
-    # ---------------- DASHBOARD ----------------
+    # -------------------------------------------------
+    # DASHBOARD
+    # -------------------------------------------------
     @app.route("/dashboard")
     @login_required
     def dashboard():
         return render_template("dashboard.html")
 
-    # ---------------- RESIDENTS ----------------
+    # -------------------------------------------------
+    # RESIDENTS
+    # -------------------------------------------------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -302,9 +303,10 @@ def create_app():
         r = Resident.query.get_or_404(rid)
         return render_template("resident_print.html", resident=r)
 
-    # ---------------- STAFF ----------------
+    # -------------------------------------------------
+    # STAFF
+    # -------------------------------------------------
     def _staff_roles():
-        # you can change this to match your dropdown
         return ["Manager", "Cook", "Dietary Aide", "Dietitian"]
 
     @app.route("/staff")
@@ -448,7 +450,6 @@ def create_app():
             return redirect(url_for("staff_list"))
         return render_template("reset.html", user=u)
 
-    # ⭐ this is the one your template wanted but you didn’t have
     @app.route("/staff/<int:uid>/delete", methods=["POST"])
     @login_required
     def staff_delete(uid):
@@ -458,7 +459,9 @@ def create_app():
         flash("Staff deleted.", "success")
         return redirect(url_for("staff_list"))
 
-    # ---------------- INVENTORY ----------------
+    # -------------------------------------------------
+    # INVENTORY
+    # -------------------------------------------------
     @app.route("/inventory")
     @login_required
     def inventory_list():
@@ -586,38 +589,164 @@ def create_app():
             mimetype="text/csv",
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
-    # ---------------- MENU HUB & PAGES ----------------
+
+    # -------------------------------------------------
+    # MENU HUB + BUILDER (now passes inventory!)
+    # -------------------------------------------------
     @app.route("/menu")
     @login_required
     def menu_hub():
-        # your menu_hub.html links to several pages
         return render_template("menu_hub.html")
 
-    # builder page
-    @app.route("/menu/builder")
+    @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
     def menu_builder():
-        return render_template("menu_builder.html")
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
 
-    # daily pages
-    @app.route("/menu/daily")
+        if request.method == "POST":
+            meal_type = (request.form.get("meal_type") or "").strip()
+            title = (request.form.get("title") or "").strip()
+            description = (request.form.get("description") or "").strip()
+            errors = []
+
+            if not meal_type:
+                errors.append("Meal type is required.")
+            if not title:
+                errors.append("Menu title is required.")
+
+            ing_ids = request.form.getlist("ingredient_id")
+            ing_qtys = request.form.getlist("quantity")
+
+            if errors:
+                return render_template(
+                    "menu_builder.html",
+                    inventory_items=inventory_items,
+                    menus=menus,
+                    editing=False,
+                    errors=errors,
+                    values={
+                        "meal_type": meal_type,
+                        "title": title,
+                        "description": description,
+                    },
+                )
+
+            m = Menu(
+                meal_type=meal_type,
+                title=title,
+                description=description,
+            )
+            db.session.add(m)
+            db.session.flush()  # get m.id
+
+            for inv_id, qty in zip(ing_ids, ing_qtys):
+                if not inv_id:
+                    continue
+                inv = InventoryItem.query.get(int(inv_id))
+                mi = MenuIngredient(
+                    menu_id=m.id,
+                    inventory_id=int(inv_id),
+                    quantity=_to_float(qty, 0.0),
+                    unit=inv.unit if inv else "",
+                )
+                db.session.add(mi)
+
+            db.session.commit()
+            flash("Menu saved.", "success")
+            return redirect(url_for("menu_builder"))
+
+        return render_template(
+            "menu_builder.html",
+            inventory_items=inventory_items,
+            menus=menus,
+            editing=False,
+            errors=[],
+            values={},
+        )
+
+    @app.route("/menu/builder/<int:menu_id>", methods=["GET", "POST"])
     @login_required
-    def menu_daily():
-        return render_template("menu_daily.html")
+    def menu_builder_edit(menu_id):
+        m = Menu.query.get_or_404(menu_id)
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
 
-    @app.route("/menu/daily/view")
+        if request.method == "POST":
+            meal_type = (request.form.get("meal_type") or "").strip()
+            title = (request.form.get("title") or "").strip()
+            description = (request.form.get("description") or "").strip()
+            errors = []
+            if not meal_type:
+                errors.append("Meal type is required.")
+            if not title:
+                errors.append("Menu title is required.")
+
+            ing_ids = request.form.getlist("ingredient_id")
+            ing_qtys = request.form.getlist("quantity")
+
+            if errors:
+                return render_template(
+                    "menu_builder.html",
+                    inventory_items=inventory_items,
+                    menus=menus,
+                    editing=True,
+                    current_menu=m,
+                    errors=errors,
+                    values={
+                        "meal_type": meal_type,
+                        "title": title,
+                        "description": description,
+                    },
+                )
+
+            m.meal_type = meal_type
+            m.title = title
+            m.description = description
+
+            MenuIngredient.query.filter_by(menu_id=m.id).delete()
+            for inv_id, qty in zip(ing_ids, ing_qtys):
+                if not inv_id:
+                    continue
+                inv = InventoryItem.query.get(int(inv_id))
+                mi = MenuIngredient(
+                    menu_id=m.id,
+                    inventory_id=int(inv_id),
+                    quantity=_to_float(qty, 0.0),
+                    unit=inv.unit if inv else "",
+                )
+                db.session.add(mi)
+
+            db.session.commit()
+            flash("Menu updated.", "success")
+            return redirect(url_for("menu_builder"))
+
+        return render_template(
+            "menu_builder.html",
+            inventory_items=inventory_items,
+            menus=menus,
+            editing=True,
+            current_menu=m,
+            errors=[],
+            values={},
+        )
+
+    @app.route("/menu/builder/<int:menu_id>/delete", methods=["POST"])
     @login_required
-    def menu_daily_view():
-        return render_template("menu_daily_view.html")
+    def menu_builder_delete(menu_id):
+        m = Menu.query.get_or_404(menu_id)
+        MenuIngredient.query.filter_by(menu_id=m.id).delete()
+        db.session.delete(m)
+        db.session.commit()
+        flash("Menu deleted.", "success")
+        return redirect(url_for("menu_builder"))
 
-    # ---- little API your template is calling (this was missing) ----
-    # e.g. {{ url_for('api_menu_items', menu_id=menu.id) }}
+    # small API some templates call
     @app.route("/api/menu/<int:menu_id>/items")
     @login_required
     def api_menu_items(menu_id):
         m = Menu.query.get_or_404(menu_id)
         items = []
-        # if your model is Menu.ingredients -> MenuIngredient -> inventory_item
         for ing in m.ingredients:
             inv = ing.inventory_item
             items.append(
@@ -636,17 +765,17 @@ def create_app():
             "items": items,
         }
 
-    # ---------------- MENU SCHEDULER ----------------
+    # -------------------------------------------------
+    # MENU SCHEDULER / PLANNED
+    # -------------------------------------------------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
-        # load all menus and bucket by meal for the UI
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
         for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
 
-        # original version showed the current week
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         week_end = monday + timedelta(days=6)
@@ -659,13 +788,11 @@ def create_app():
             .all()
         )
 
-        # group by day -> meal_type for easy rendering
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
             day_bucket.setdefault(s.meal_type, []).append(s)
 
-        # 7-day list for template
         days = [{"date": monday + timedelta(days=i)} for i in range(7)]
 
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
@@ -678,7 +805,6 @@ def create_app():
             inventory_items=inventory_items,
         )
 
-    # ---------------- PLANNED MENUS ----------------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
@@ -729,14 +855,12 @@ def create_app():
             next_url=next_url,
         )
 
-    # optional: you have planned_menu_view.html too
     @app.route("/menu/planned/view")
     @login_required
     def planned_menu_view():
         return render_template("planned_menu_view.html")
 
-    
-    # ---------------- health ----------------
+    # health
     @app.route("/healthz")
     def healthz():
         return "ok", 200
