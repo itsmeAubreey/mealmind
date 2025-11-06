@@ -62,6 +62,31 @@ def login_required(view):
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
+    # ... your DB config here ...
+
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
+        # seed manager if needed ...
+
+    # 👇 ADD THIS PART
+    def age_from_date(d):
+        if not d:
+            return ""
+        if isinstance(d, str):
+            try:
+                d = datetime.strptime(d, "%Y-%m-%d").date()
+            except Exception:
+                return ""
+        today = date.today()
+        years = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
+        return years
+
+    @app.context_processor
+    def inject_helpers():
+        # this makes {{ age(...) }} available in all templates
+        return {"age": age_from_date}
+    # 👆 END OF NEW PART
 
     # DB location (Azure-friendly)
     db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
