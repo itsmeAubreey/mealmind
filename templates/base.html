@@ -1,104 +1,162 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <title>MealMind</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <title>{% block title %}MealMind{% endblock %}</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
     <style>
       :root {
-        --bg: #f4f5f9;
-        --nav: #0f172a;
-        --card: #ffffff;
+        --nav-bg: #0f192b;
+        --page-bg: #f3f4f8;
       }
-      * { box-sizing: border-box; }
       body {
-        margin: 0;
+        margin:0;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--bg);
+        background: var(--page-bg);
       }
-      header {
-        height: 54px;
-        background: var(--nav);
+      .topbar {
+        background: var(--nav-bg);
         color: #fff;
+        height: 56px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 1.5rem;
+        padding: 0 16px;
+        box-sizing: border-box;
       }
       .brand {
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
+        display:flex;
+        align-items:center;
+        gap:10px;
       }
-      .brand a {
-        color: #fff;
-        text-decoration: none;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-      }
-      .brand-logo {
-        height: 30px;
-        width: auto;
-        display: block;
+      .brand img {
+        height:34px;
       }
       .top-right {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-      }
-      .user-chip {
-        font-size: 0.7rem;
-        opacity: 0.85;
+        display:flex;
+        align-items:center;
+        gap:14px;
+        font-size: 13px;
       }
       .logout-btn {
-        background: #f97316;
-        color: #fff;
-        padding: 0.35rem 0.85rem;
+        background:#f97316;
+        color:#fff;
+        border:none;
+        padding:6px 14px;
+        border-radius:9999px;
+        cursor:pointer;
+        font-weight:600;
+      }
+      .page-wrap {
+        padding: 20px 30px 70px;
+      }
+
+      /* floating chatbot */
+      #chat-button {
+        position: fixed;
+        bottom: 22px;
+        right: 22px;
+        z-index: 999;
+        width: 52px;
+        height: 52px;
         border-radius: 9999px;
-        font-size: 0.7rem;
-        text-decoration: none;
+        border: none;
+        background: #2563eb;
+        color: #fff;
+        font-size: 26px;
+        cursor: pointer;
+        box-shadow: 0 12px 28px rgba(0,0,0,0.2);
       }
-      main {
-        max-width: 1240px;
-        margin: 1.5rem auto 2.5rem;
-        padding: 0 1rem;
-      }
-      .flash {
+      #chat-window {
+        position: fixed;
+        bottom: 84px;
+        right: 22px;
+        width: 290px;
+        height: 360px;
         background: #fff;
-        border-left: 4px solid #0f766e;
-        padding: 0.5rem 0.8rem;
-        border-radius: 0.4rem;
-        margin-bottom: 0.7rem;
-        font-size: 0.78rem;
+        border-radius: 14px;
+        box-shadow: 0 12px 28px rgba(0,0,0,0.12);
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+        z-index: 999;
       }
-      .flash.error {
-        border-left-color: #dc2626;
+      #chat-header {
+        background: #2563eb;
+        color: #fff;
+        padding: 10px 14px;
+        display:flex;
+        justify-content: space-between;
+        align-items: center;
       }
-      a { color: #0f766e; }
+      #chat-body {
+        flex:1;
+        padding: 10px 12px;
+        font-size: 13px;
+      }
+      #chat-input {
+        border-top: 1px solid #eee;
+        padding: 6px;
+      }
+      #chat-input input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+      }
     </style>
+
+    {% block head %}{% endblock %}
   </head>
   <body>
-    <header>
+    <header class="topbar">
       <div class="brand">
-        <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="MealMind" class="brand-logo">
-        <a href="{{ url_for('dashboard') }}">MealMind</a>
+        <img src="{{ url_for('static', filename='logo.svg') }}" alt="MealMind">
+        <strong>MealMind</strong>
       </div>
-      {% if user %}
-        <div class="top-right">
-         
-          <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
-        </div>
-      {% endif %}
-    </header>
-    <main>
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
-          {% endfor %}
+      <div class="top-right">
+        {% if session.get('user') %}
+          <span>Welcome, {{ session.get('user') }}</span>
         {% endif %}
-      {% endwith %}
+        <form action="{{ url_for('logout') }}" method="post" style="margin:0;">
+          <button class="logout-btn" type="submit">Logout</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="page-wrap">
       {% block content %}{% endblock %}
     </main>
+
+    <!-- floating chatbot -->
+    <button id="chat-button" title="Chat">💬</button>
+    <div id="chat-window">
+      <div id="chat-header">
+        <span>MealMind Assistant</span>
+        <button onclick="toggleChat()" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">×</button>
+      </div>
+      <div id="chat-body">
+        <p><strong>Hi!</strong> Chatbot placeholder.</p>
+        <p>You can wire this to Azure OpenAI later.</p>
+      </div>
+      <div id="chat-input">
+        <input type="text" placeholder="Type a message…" disabled>
+      </div>
+    </div>
+
+    <script>
+      const chatBtn = document.getElementById('chat-button');
+      const chatWin = document.getElementById('chat-window');
+
+      function toggleChat() {
+        if (chatWin.style.display === 'flex') {
+          chatWin.style.display = 'none';
+        } else {
+          chatWin.style.display = 'flex';
+        }
+      }
+
+      chatBtn.addEventListener('click', toggleChat);
+    </script>
   </body>
 </html>
