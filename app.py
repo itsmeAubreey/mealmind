@@ -1,4 +1,4 @@
-# app.py — MealMind (fixed MenuIngredient)
+# app.py — MealMind (Flask 3 safe, no before_first_request)
 import os
 from datetime import datetime, date
 from functools import wraps
@@ -15,9 +15,7 @@ from models import (
 )
 
 
-# -------------------------------------------------
-# helpers
-# -------------------------------------------------
+# ---------- small helpers ----------
 def _parse_date(val):
     if not val:
         return None
@@ -44,13 +42,11 @@ def _to_float(v, default=0.0):
         return default
 
 
-# -------------------------------------------------
-# app factory
-# -------------------------------------------------
+# ---------- app factory ----------
 def create_app():
     app = Flask(__name__)
 
-    # DB path (Azure-friendly)
+    # 1) database location (Azure-friendly)
     db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
     if not db_uri:
         azure_dir = "/home/site/wwwroot"
@@ -66,16 +62,27 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
+    # 2) init + create tables
     db.init_app(app)
     with app.app_context():
         db.create_all()
 
-    # let templates do {{ age(resident.birthday) }}
+        # 3) seed manager ONCE (since we can’t use before_first_request on Flask 3)
+        if not User.query.first():
+            m = User(
+                username="manager",
+                employee_id="00000000",
+                email="manager@example.com",
+                role="Manager",
+            )
+            m.set_password("1234")
+            db.session.add(m)
+            db.session.commit()
+
+    # let templates call {{ age(...) }}
     app.jinja_env.globals["age"] = _calc_age
 
-    # -------------------------------------------------
-    # context + decorators
-    # -------------------------------------------------
+    # ---------- context + decorators ----------
     @app.context_processor
     def inject_user():
         return {"current_user": session.get("user")}
@@ -91,9 +98,7 @@ def create_app():
     def current_role():
         return session.get("user", {}).get("role", "")
 
-    # -------------------------------------------------
-    # AUTH
-    # -------------------------------------------------
+    # ---------- AUTH ----------
     @app.route("/", methods=["GET", "POST"])
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -117,6 +122,7 @@ def create_app():
                 try:
                     ok = check_password_hash(stored, password)
                 except Exception:
+                    # plain text fallback
                     ok = stored == password
 
             if user and ok:
@@ -138,18 +144,14 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
-    # -------------------------------------------------
-    # DASHBOARD
-    # -------------------------------------------------
+    # ---------- DASHBOARD ----------
     @app.route("/dashboard")
     @login_required
     def dashboard():
         user = session.get("user", {})
         return render_template("dashboard.html", user=user)
 
-    # -------------------------------------------------
-    # RESIDENTS
-    # -------------------------------------------------
+    # ---------- RESIDENTS ----------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -233,9 +235,7 @@ def create_app():
         db.session.commit()
         return redirect(url_for("residents_list"))
 
-    # -------------------------------------------------
-    # STAFF
-    # -------------------------------------------------
+    # ---------- STAFF ----------
     @app.route("/staff")
     @login_required
     def staff_list():
@@ -245,9 +245,7 @@ def create_app():
         users = User.query.order_by(User.last_name, User.first_name).all()
         return render_template("staff_list.html", users=users)
 
-    # -------------------------------------------------
-    # INVENTORY
-    # -------------------------------------------------
+    # ---------- INVENTORY ----------
     INVENTORY_UNITS = [
         "kg", "g", "bags", "cases", "dozen", "cans", "liters", "jugs",
         "bunches", "heads", "loaves", "packs", "bottles", "jars", "boxes", "pcs"
@@ -306,18 +304,21 @@ def create_app():
                 it.quantity = qty
                 db.session.commit()
                 return redirect(url_for("inventory_list"))
+
             name = (request.form.get("name") or "").strip()
             unit = (request.form.get("unit") or "").strip()
             low = _to_float(request.form.get("low_stock_threshold"), 0.0)
             if not name or unit not in INVENTORY_UNITS:
                 flash("Name and valid unit required.", "error")
                 return render_template("inventory_form.html", mode="edit", values=request.form, item_id=item_id, units=INVENTORY_UNITS, limited=limited)
+
             it.name = name
             it.unit = unit
             it.quantity = qty
             it.low_stock_threshold = low
             db.session.commit()
             return redirect(url_for("inventory_list"))
+
         return render_template("inventory_form.html", mode="edit", values=it, item_id=item_id, units=INVENTORY_UNITS, limited=limited)
 
     @app.route("/inventory/<int:iid>/bump", methods=["POST"])
@@ -329,15 +330,12 @@ def create_app():
         db.session.commit()
         return redirect(url_for("inventory_list"))
 
-    # -------------------------------------------------
-    # MENU
-    # -------------------------------------------------
+    # ---------- MENU ----------
     @app.route("/menu")
     @login_required
     def menu_hub():
         return render_template("menu_hub.html")
 
-    # create menu
     @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
     def menu_builder():
@@ -383,7 +381,6 @@ def create_app():
                     menu_id=m.id,
                     inventory_id=inv.id,
                     quantity=_to_float(qty, 0.0),
-                    # NOTE: no "unit=" here because your model doesn't have it
                 )
                 db.session.add(mi)
 
@@ -399,7 +396,6 @@ def create_app():
             values={},
         )
 
-    # edit menu
     @app.route("/menu/builder/<int:menu_id>", methods=["GET", "POST"])
     @login_required
     def menu_builder_edit(menu_id):
@@ -480,21 +476,6 @@ def create_app():
     @login_required
     def menu_scheduler():
         return render_template("menu_scheduler.html")
-
-    # seed a default manager if db empty
-    @app.before_first_request
-    def seed_user():
-        if User.query.first():
-            return
-        m = User(
-            username="manager",
-            employee_id="00000000",
-            email="manager@example.com",
-            role="Manager",
-        )
-        m.set_password("1234")
-        db.session.add(m)
-        db.session.commit()
 
     return app
 
