@@ -17,8 +17,8 @@ from flask import (
 )
 from sqlalchemy import or_
 
-# 👇 your models file is named *model.py*, not models.py
-from model import (
+# 👇 use the actual filename in your repo: models.py
+from models import (
     db,
     User,
     Resident,
@@ -29,7 +29,7 @@ from model import (
     MenuScheduleItem,
 )
 
-# ---------- small helpers ----------
+# ---------- helpers ----------
 def _parse_date(s: str):
     if not s:
         return None
@@ -63,7 +63,7 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
 
-    # pick DB path
+    # DB location (Azure-friendly)
     db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
     if not db_uri:
         azure_data = "/home/site/data"
@@ -71,14 +71,13 @@ def create_app():
             db_uri = "sqlite:///" + os.path.join(azure_data, "app.db")
         else:
             db_uri = "sqlite:///mealmind.db"
-
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     db.init_app(app)
     with app.app_context():
         db.create_all()
-        # make sure we always have 1 user
+        # seed manager once
         if not User.query.first():
             u = User(
                 username="manager",
@@ -90,23 +89,19 @@ def create_app():
             db.session.add(u)
             db.session.commit()
 
-    # make {{ user }} work in all templates
     @app.context_processor
     def inject_user():
         u = session.get("user")
         return {"current_user": u, "user": u}
 
-    # ---------- Chat endpoint (uses Azure OpenAI) ----------
+    # ---------- CHAT (optional Azure OpenAI) ----------
     @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
-        # import here so missing 'requests' will not break startup
         try:
             import requests
         except ImportError:
-            return jsonify(
-                {"reply": "Chat is configured, but the server has no 'requests' package."}
-            ), 500
+            return jsonify({"reply": "Server has no 'requests' package."}), 500
 
         data = request.get_json(force=True) or {}
         user_message = (data.get("message") or "").strip()
@@ -115,25 +110,21 @@ def create_app():
 
         endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_KEY")
-        deployment = os.getenv("AZURE_OPENAI_MODEL") or os.getenv(
-            "AZURE_OPENAI_DEPLOYMENT", "mealmind-chat"
+        deployment = (
+            os.getenv("AZURE_OPENAI_MODEL")
+            or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            or "mealmind-chat"
         )
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
 
         if not endpoint or not key:
-            return jsonify({"reply": "Azure OpenAI is not configured on the server."}), 500
+            return jsonify({"reply": "Azure OpenAI not configured."}), 500
 
         url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version={api_version}"
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": key,
-        }
+        headers = {"Content-Type": "application/json", "api-key": key}
         payload = {
             "messages": [
-                {
-                    "role": "system",
-                    "content": "You are MealMind assistant. Be concise and helpful.",
-                },
+                {"role": "system", "content": "You are MealMind assistant."},
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.6,
@@ -147,9 +138,9 @@ def create_app():
             reply = body["choices"][0]["message"]["content"]
             return jsonify({"reply": reply})
         except Exception:
-            return jsonify({"reply": "Sorry, I can’t reach Azure OpenAI right now."}), 500
+            return jsonify({"reply": "Can’t reach Azure OpenAI right now."}), 500
 
-    # ---------------- AUTH ----------------
+    # ---------- AUTH ----------
     @app.route("/")
     def home():
         if "user" in session:
@@ -192,13 +183,13 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
-    # ---------------- DASHBOARD ----------------
+    # ---------- DASHBOARD ----------
     @app.route("/dashboard")
     @login_required
     def dashboard():
         return render_template("dashboard.html")
 
-    # ---------------- RESIDENTS ----------------
+    # ---------- RESIDENTS ----------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -254,14 +245,13 @@ def create_app():
             return redirect(url_for("residents_list"))
         return render_template("residents_form.html", resident=r)
 
-    # this is the URL your template was calling
     @app.route("/resident/<int:rid>/print")
     @login_required
     def resident_print(rid):
         r = Resident.query.get_or_404(rid)
         return render_template("resident_print.html", resident=r)
 
-    # ---------------- STAFF ----------------
+    # ---------- STAFF ----------
     def _staff_roles():
         return ["Manager", "Cook", "Dietary Aide", "Dietitian"]
 
@@ -411,7 +401,7 @@ def create_app():
         flash("Staff deleted.", "success")
         return redirect(url_for("staff_list"))
 
-    # ---------------- INVENTORY ----------------
+    # ---------- INVENTORY ----------
     @app.route("/inventory")
     @login_required
     def inventory_list():
@@ -540,7 +530,7 @@ def create_app():
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
-    # ---------------- MENU HUB & PAGES ----------------
+    # ---------- MENU HUB ----------
     @app.route("/menu")
     @login_required
     def menu_hub():
@@ -561,40 +551,7 @@ def create_app():
     def menu_daily_view():
         return render_template("menu_daily_view.html")
 
-    # small JSON API for menu_builder
-    @app.route("/api/menu/<int:menu_id>/items")
-    @login_required
-    def api_menu_items(menu_id):
-        m = Menu.query.get_or_404(menu_id)
-        items = []
-
-        # handle whichever attribute exists
-        ing_list = []
-        if hasattr(m, "ingredients") and m.ingredients is not None:
-            ing_list = m.ingredients
-        elif hasattr(m, "menu_items") and m.menu_items is not None:
-            ing_list = m.menu_items
-
-        for ing in ing_list:
-            inv = getattr(ing, "inventory_item", None)
-            items.append(
-                {
-                    "id": ing.id,
-                    "inventory_id": getattr(ing, "inventory_id", None),
-                    "name": inv.name if inv else "",
-                    "quantity": getattr(ing, "quantity", 0),
-                    "unit": getattr(ing, "unit", "") or (inv.unit if inv else ""),
-                }
-            )
-
-        return {
-            "id": m.id,
-            "title": getattr(m, "title", ""),
-            "meal_type": getattr(m, "meal_type", ""),
-            "items": items,
-        }
-
-    # ---------------- MENU SCHEDULER ----------------
+    # ---------- MENU SCHEDULER ----------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
@@ -631,7 +588,7 @@ def create_app():
             inventory_items=inventory_items,
         )
 
-    # ---------------- PLANNED MENUS ----------------
+    # ---------- PLANNED MENUS ----------
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
@@ -687,7 +644,7 @@ def create_app():
     def planned_menu_view():
         return render_template("planned_menu_view.html")
 
-    # ---------------- health ----------------
+    # ---------- health ----------
     @app.route("/healthz")
     def healthz():
         return "ok", 200
