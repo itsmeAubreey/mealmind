@@ -647,7 +647,7 @@ def create_app():
         inventory_items = (
             InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         )
-    
+
         return render_template(
             "menu_scheduler.html",
             menus_by_meal=menus_by_meal,
@@ -655,10 +655,7 @@ def create_app():
             grouped=grouped,
             inventory_items=inventory_items,
         )
-   
     
-
-
     @app.route("/menu/planned/view")
     @login_required
     def planned_menu_view():
