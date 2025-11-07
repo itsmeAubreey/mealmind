@@ -628,43 +628,33 @@ def create_app():
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
-    
-    # ---------------- MENU SCHEDULER ----------------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
-        # load all menus and bucket by meal for the UI
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
         for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
-    
-        # show current week
+
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         week_end = monday + timedelta(days=6)
-    
+
         schedules = (
             MenuSchedule.query.filter(
-                MenuSchedule.date >= monday,
-                MenuSchedule.date <= week_end,
+                MenuSchedule.date >= monday, MenuSchedule.date <= week_end
             )
             .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
             .all()
         )
-    
-        # group by day -> meal_type
+
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
             day_bucket.setdefault(s.meal_type, []).append(s)
-    
-        # 7-day list for template
+
         days = [{"date": monday + timedelta(days=i)} for i in range(7)]
-    
-        inventory_items = (
-            InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-        )
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
 
         return render_template(
             "menu_scheduler.html",
@@ -673,12 +663,61 @@ def create_app():
             grouped=grouped,
             inventory_items=inventory_items,
         )
-    
+
+    @app.route("/menu/planned")
+    @login_required
+    def planned_menus():
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        return redirect(url_for("planned_menu_week", base=monday.isoformat()))
+
+    @app.route("/menu/planned/week")
+    @login_required
+    def planned_menu_week():
+        base_str = request.args.get("base")
+        if base_str:
+            monday = _parse_date(base_str)
+        else:
+            today = date.today()
+            monday = today - timedelta(days=today.weekday())
+        week_start = monday
+        week_end = week_start + timedelta(days=6)
+
+        schedules = (
+            MenuSchedule.query.filter(
+                MenuSchedule.date >= week_start, MenuSchedule.date <= week_end
+            )
+            .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
+            .all()
+        )
+        grouped = {}
+        for s in schedules:
+            day_bucket = grouped.setdefault(s.date, {})
+            day_bucket.setdefault(s.meal_type, []).append(s)
+
+        days = [{"date": week_start + timedelta(days=i)} for i in range(7)]
+
+        prev_url = url_for(
+            "planned_menu_week", base=(week_start - timedelta(days=7)).isoformat()
+        )
+        next_url = url_for(
+            "planned_menu_week", base=(week_start + timedelta(days=7)).isoformat()
+        )
+
+        return render_template(
+            "planned_menu_week.html",
+            week_start=week_start,
+            week_end=week_end,
+            days=days,
+            grouped=grouped,
+            prev_url=prev_url,
+            next_url=next_url,
+        )
+
     @app.route("/menu/planned/view")
     @login_required
     def planned_menu_view():
         return render_template("planned_menu_view.html")
-
     # ---------- health ----------
     @app.route("/healthz")
     def healthz():
