@@ -1,162 +1,146 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{% block title %}MealMind{% endblock %}</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <style>
-      :root {
-        --nav-bg: #0f192b;
-        --page-bg: #f3f4f8;
-      }
       body {
-        margin:0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--page-bg);
+        margin: 0;
+        background: #f3f4f8;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
       }
       .topbar {
-        background: var(--nav-bg);
+        height: 52px;
+        background: #0f1829;
         color: #fff;
-        height: 56px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 16px;
-        box-sizing: border-box;
+        padding: 0 14px;
       }
       .brand {
-        display:flex;
-        align-items:center;
-        gap:10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
       .brand img {
-        height:34px;
+        height: 30px;
       }
-      .top-right {
-        display:flex;
-        align-items:center;
-        gap:14px;
-        font-size: 13px;
+      .brand-name {
+        font-weight: 600;
+      }
+      .top-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
       }
       .logout-btn {
-        background:#f97316;
-        color:#fff;
-        border:none;
-        padding:6px 14px;
-        border-radius:9999px;
-        cursor:pointer;
-        font-weight:600;
+        background: #f97316;
+        border: none;
+        color: #fff;
+        border-radius: 9999px;
+        padding: 6px 16px;
+        cursor: pointer;
+        font-weight: 600;
+        text-decoration: none;
       }
-      .page-wrap {
-        padding: 20px 30px 70px;
+      main {
+        padding: 18px 22px 90px;
       }
 
-      /* floating chatbot */
-      #chat-button {
+      /* floating chat bubble */
+      .chat-bubble {
         position: fixed;
-        bottom: 22px;
-        right: 22px;
-        z-index: 999;
-        width: 52px;
-        height: 52px;
+        right: 18px;
+        bottom: 18px;
+        width: 58px;
+        height: 58px;
         border-radius: 9999px;
-        border: none;
         background: #2563eb;
+        box-shadow: 0 10px 30px rgba(37, 99, 235, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: #fff;
-        font-size: 26px;
         cursor: pointer;
-        box-shadow: 0 12px 28px rgba(0,0,0,0.2);
+        font-size: 26px;
       }
-      #chat-window {
+      .chat-panel {
         position: fixed;
-        bottom: 84px;
-        right: 22px;
-        width: 290px;
-        height: 360px;
+        right: 90px;
+        bottom: 18px;
+        width: 310px;
+        max-height: 430px;
         background: #fff;
-        border-radius: 14px;
-        box-shadow: 0 12px 28px rgba(0,0,0,0.12);
+        border-radius: 16px;
+        box-shadow: 0 16px 40px rgba(15, 24, 41, 0.26);
         display: none;
         flex-direction: column;
         overflow: hidden;
-        z-index: 999;
       }
-      #chat-header {
-        background: #2563eb;
+      .chat-panel-header {
+        background: #0f1829;
         color: #fff;
         padding: 10px 14px;
-        display:flex;
+        display: flex;
         justify-content: space-between;
         align-items: center;
       }
-      #chat-body {
-        flex:1;
-        padding: 10px 12px;
+      .chat-panel-body {
+        padding: 10px 14px;
+        flex: 1;
         font-size: 13px;
       }
-      #chat-input {
-        border-top: 1px solid #eee;
-        padding: 6px;
-      }
-      #chat-input input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 6px 8px;
+      .chat-input {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        margin: 10px;
+        padding: 7px 10px;
       }
     </style>
-
     {% block head %}{% endblock %}
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
         <img src="{{ url_for('static', filename='logo.svg') }}" alt="MealMind">
-        <strong>MealMind</strong>
+        <span class="brand-name">MealMind</span>
       </div>
-      <div class="top-right">
-        {% if session.get('user') %}
-          <span>Welcome, {{ session.get('user') }}</span>
+      <div class="top-actions">
+        {# we keep the username for later if you want it, but don't print dicts anymore #}
+        {% if current_user.is_authenticated %}
+          <span style="opacity:.8;font-size:13px;">{{ current_user.username }}</span>
         {% endif %}
-        <form action="{{ url_for('logout') }}" method="post" style="margin:0;">
-          <button class="logout-btn" type="submit">Logout</button>
-        </form>
+        <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
       </div>
     </header>
 
-    <main class="page-wrap">
+    <main>
       {% block content %}{% endblock %}
     </main>
 
-    <!-- floating chatbot -->
-    <button id="chat-button" title="Chat">💬</button>
-    <div id="chat-window">
-      <div id="chat-header">
+    <!-- floating “not-real-yet” chatbot -->
+    <div class="chat-bubble" onclick="toggleChat()">💬</div>
+    <div id="chatPanel" class="chat-panel">
+      <div class="chat-panel-header">
         <span>MealMind Assistant</span>
-        <button onclick="toggleChat()" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">×</button>
+        <button style="background:none;border:none;color:#fff;cursor:pointer;font-size:16px;" onclick="toggleChat()">×</button>
       </div>
-      <div id="chat-body">
-        <p><strong>Hi!</strong> Chatbot placeholder.</p>
-        <p>You can wire this to Azure OpenAI later.</p>
+      <div class="chat-panel-body">
+        <p style="margin-top:0">Hi! This is a placeholder chat box. Later we can call your Azure OpenAI endpoint from here.</p>
+        <p style="color:#6b7280">For now it won’t send anywhere — it’s just UI.</p>
       </div>
-      <div id="chat-input">
-        <input type="text" placeholder="Type a message…" disabled>
-      </div>
+      <input class="chat-input" placeholder="Type a message…" />
     </div>
 
     <script>
-      const chatBtn = document.getElementById('chat-button');
-      const chatWin = document.getElementById('chat-window');
-
       function toggleChat() {
-        if (chatWin.style.display === 'flex') {
-          chatWin.style.display = 'none';
-        } else {
-          chatWin.style.display = 'flex';
-        }
+        const panel = document.getElementById("chatPanel");
+        panel.style.display = panel.style.display === "flex" ? "none" : "flex";
       }
-
-      chatBtn.addEventListener('click', toggleChat);
     </script>
   </body>
 </html>
