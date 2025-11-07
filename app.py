@@ -200,9 +200,11 @@ def create_app():
 
         return render_template("login.html")
 
+    # ---------- AUTH ----------
     @app.route("/logout")
+    @login_required
     def logout():
-        session.clear()
+        logout_user()
         return redirect(url_for("login"))
 
     # ---------- DASHBOARD ----------
@@ -215,19 +217,20 @@ def create_app():
     @app.route("/residents")
     @login_required
     def residents_list():
-        q = (request.args.get("q") or "").strip()
+        q = request.args.get("q", "").strip()
         query = Resident.query
         if q:
             like = f"%{q}%"
             query = query.filter(
-                or_(
+                db.or_(
                     Resident.first_name.ilike(like),
                     Resident.last_name.ilike(like),
                     Resident.diet.ilike(like),
+                    Resident.allergies.ilike(like),
                 )
             )
-        rows = query.order_by(Resident.last_name.asc(), Resident.first_name.asc()).all()
-        return render_template("residents_list.html", residents=rows, q=q)
+        residents = query.order_by(Resident.last_name, Resident.first_name).all()
+        return render_template("residents_list.html", residents=residents)
 
     @app.route("/residents/new", methods=["GET", "POST"])
     @login_required
@@ -237,17 +240,23 @@ def create_app():
                 first_name=request.form.get("first_name") or "",
                 last_name=request.form.get("last_name") or "",
                 birthday=_parse_date(request.form.get("birthday")),
-                diet=request.form.get("diet") or "",
-                allergies=request.form.get("allergies") or "",
-                illnesses=request.form.get("illnesses") or "",
                 medications=request.form.get("medications") or "",
+                illnesses=request.form.get("illnesses") or "",
+                allergies=request.form.get("allergies") or "",
                 fluids=request.form.get("fluids") or "",
+                diet=request.form.get("diet") or "",
                 notes=request.form.get("notes") or "",
             )
             db.session.add(r)
             db.session.commit()
             return redirect(url_for("residents_list"))
-        return render_template("residents_form.html", resident=None)
+
+        return render_template(
+            "residents_form.html",
+            mode="new",
+            values=None,
+            rid=None,
+        )
 
     @app.route("/residents/<int:rid>/edit", methods=["GET", "POST"])
     @login_required
@@ -257,21 +266,37 @@ def create_app():
             r.first_name = request.form.get("first_name") or ""
             r.last_name = request.form.get("last_name") or ""
             r.birthday = _parse_date(request.form.get("birthday"))
-            r.diet = request.form.get("diet") or ""
-            r.allergies = request.form.get("allergies") or ""
-            r.illnesses = request.form.get("illnesses") or ""
             r.medications = request.form.get("medications") or ""
+            r.illnesses = request.form.get("illnesses") or ""
+            r.allergies = request.form.get("allergies") or ""
             r.fluids = request.form.get("fluids") or ""
+            r.diet = request.form.get("diet") or ""
             r.notes = request.form.get("notes") or ""
             db.session.commit()
             return redirect(url_for("residents_list"))
-        return render_template("residents_form.html", resident=r)
+
+        # pass what the template expects
+        return render_template(
+            "residents_form.html",
+            mode="edit",
+            values=r,
+            rid=r.id,
+        )
+
+    @app.route("/residents/<int:rid>/delete", methods=["POST"])
+    @login_required
+    def residents_delete(rid):
+        r = Resident.query.get_or_404(rid)
+        db.session.delete(r)
+        db.session.commit()
+        return redirect(url_for("residents_list"))
 
     @app.route("/resident/<int:rid>/print")
     @login_required
     def resident_print(rid):
         r = Resident.query.get_or_404(rid)
-        return render_template("resident_print.html", resident=r)
+        auto = request.args.get("auto")
+        return render_template("resident_print.html", resident=r, auto=auto)
 
     # ---------- STAFF ----------
     def _staff_roles():
