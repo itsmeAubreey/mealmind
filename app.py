@@ -610,114 +610,22 @@ def create_app():
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
-        # ---------------- MENU SCHEDULER ----------------
-    @app.route("/menu/scheduler", methods=["GET", "POST"])
+    
+    # ---------------- MENU SCHEDULER ----------------
+    @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
-        # only certain roles
-        if current_role() not in ("Manager", "Cook", "Dietitian"):
-            flash("You do not have access to that page.", "error")
-            return redirect(url_for("dashboard"))
-
-        # all menus and inventory for the form
-        menus = Menu.query.order_by(Menu.meal_type, Menu.title).all()
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name).all()
-
-        if request.method == "POST":
-            # date + notes
-            selected_date = _parse_date(request.form.get("date")) or date.today()
-            notes = (request.form.get("notes") or "").strip()
-
-            # which menus user picked per meal
-            chosen = {}
-            for meal_type in ["Breakfast", "Lunch", "Dinner"]:
-                mid = request.form.get(f"{meal_type}_menu")
-                if mid:
-                    chosen[meal_type] = int(mid)
-
-            if not chosen:
-                flash("No menus selected; nothing saved.", "error")
-                return redirect(url_for("menu_scheduler"))
-
-            # 1) figure out total ingredients needed across the chosen menus
-            need_map = {}   # inventory_id -> total qty needed
-            name_map = {}   # inventory_id -> (name, unit)
-            for meal_type, mid in chosen.items():
-                base_menu = Menu.query.get(mid)
-                if not base_menu:
-                    continue
-                for ing in base_menu.ingredients:
-                    # allow override per meal/ingredient, e.g. Breakfast_qty_12
-                    override_key = f"{meal_type}_qty_{ing.id}"
-                    use_qty = _to_float(request.form.get(override_key), ing.quantity)
-
-                    inv = InventoryItem.query.get(ing.inventory_id)
-                    if not inv:
-                        flash(f"Inventory item missing for a menu ingredient in {meal_type}.", "error")
-                        return redirect(url_for("menu_scheduler"))
-
-                    need_map[inv.id] = need_map.get(inv.id, 0.0) + (use_qty or 0.0)
-                    name_map[inv.id] = (inv.name, inv.unit)
-
-            # 2) check inventory first
-            problems = []
-            for inv_id, need in need_map.items():
-                inv = InventoryItem.query.get(inv_id)
-                have = inv.quantity or 0.0
-                if have < need:
-                    nm, un = name_map[inv_id]
-                    problems.append(f"{nm} needs {need:g}{un} (have {have:g})")
-
-            if problems:
-                flash("Not saved. Issues: " + "; ".join(problems), "error")
-                return redirect(url_for("menu_scheduler"))
-
-            # 3) save schedules + deduct inventory
-            for meal_type, mid in chosen.items():
-                # clear any existing schedule for that date+meal
-                MenuSchedule.query.filter_by(
-                    date=selected_date, meal_type=meal_type
-                ).delete(synchronize_session=False)
-
-                sched = MenuSchedule(
-                    date=selected_date,
-                    meal_type=meal_type,
-                    menu_id=mid,
-                    notes=notes,
-                )
-                db.session.add(sched)
-
-                base_menu = Menu.query.get(mid)
-                for ing in base_menu.ingredients:
-                    override_key = f"{meal_type}_qty_{ing.id}"
-                    use_qty = _to_float(request.form.get(override_key), ing.quantity)
-                    if not use_qty:
-                        continue
-
-                    inv = InventoryItem.query.get(ing.inventory_id)
-                    if inv:
-                        # deduct
-                        inv.quantity = (inv.quantity or 0.0) - use_qty
-
-                        # keep a record line
-                        db.session.add(
-                            MenuScheduleItem(
-                                schedule=sched,
-                                inventory_id=inv.id,
-                                quantity=use_qty,
-                                unit=ing.unit or inv.unit,
-                            )
-                        )
-
-            db.session.commit()
-            flash("Menu schedule saved.", "success")
-            return redirect(url_for("menu_scheduler"))
-
-        # ---------- GET: show current week ----------
+        # load all menus and bucket by meal for the UI
+        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
+        menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
+        for m in menus:
+            menus_by_meal.setdefault(m.meal_type, []).append(m)
+    
+        # show current week
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         week_end = monday + timedelta(days=6)
-
+    
         schedules = (
             MenuSchedule.query.filter(
                 MenuSchedule.date >= monday,
@@ -726,20 +634,20 @@ def create_app():
             .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
             .all()
         )
-
-        # group for the template -> {date: {meal_type: [MenuSchedule,...]}}
+    
+        # group by day -> meal_type
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
             day_bucket.setdefault(s.meal_type, []).append(s)
-
-        # bucket menus by meal for the dropdowns
-        menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
-        for m in menus:
-            menus_by_meal.setdefault(m.meal_type, []).append(m)
-
+    
+        # 7-day list for template
         days = [{"date": monday + timedelta(days=i)} for i in range(7)]
-
+    
+        inventory_items = (
+            InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        )
+    
         return render_template(
             "menu_scheduler.html",
             menus_by_meal=menus_by_meal,
@@ -747,6 +655,9 @@ def create_app():
             grouped=grouped,
             inventory_items=inventory_items,
         )
+   
+    
+
 
     @app.route("/menu/planned/view")
     @login_required
