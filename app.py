@@ -204,7 +204,9 @@ def create_app():
     @app.route("/logout")
     @login_required
     def logout():
-        logout_user()
+        # you only store the user in the session, so just clear it
+        session.clear()
+        # send them back to login
         return redirect(url_for("login"))
 
     # ---------- DASHBOARD ----------
@@ -296,7 +298,13 @@ def create_app():
     def resident_print(rid):
         r = Resident.query.get_or_404(rid)
         auto = request.args.get("auto")
-        return render_template("resident_print.html", resident=r, auto=auto)
+        # template was using "r", but route was only sending "resident"
+        return render_template(
+            "resident_print.html",
+            resident=r,
+            r=r,           # <-- add this so {{ r... }} in template works
+            auto=auto,
+        )
 
     # ---------- STAFF ----------
     def _staff_roles():
@@ -602,34 +610,43 @@ def create_app():
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
+    # ---------------- MENU SCHEDULER ----------------
     @app.route("/menu/scheduler")
     @login_required
     def menu_scheduler():
+        # load all menus and bucket by meal for the UI
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
         for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
-
+    
+        # show current week
         today = date.today()
         monday = today - timedelta(days=today.weekday())
         week_end = monday + timedelta(days=6)
-
+    
         schedules = (
             MenuSchedule.query.filter(
-                MenuSchedule.date >= monday, MenuSchedule.date <= week_end
+                MenuSchedule.date >= monday,
+                MenuSchedule.date <= week_end,
             )
             .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
             .all()
         )
-
+    
+        # group by day -> meal_type
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
             day_bucket.setdefault(s.meal_type, []).append(s)
-
+    
+        # 7-day list for template
         days = [{"date": monday + timedelta(days=i)} for i in range(7)]
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-
+    
+        inventory_items = (
+            InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        )
+    
         return render_template(
             "menu_scheduler.html",
             menus_by_meal=menus_by_meal,
