@@ -112,41 +112,51 @@ def create_app():
         u = session.get("user")
         return {"age": age_from_date, "current_user": u, "user": u}
 
-    # ---------- optional Azure OpenAI chat ----------
+    # ---------------- optional Azure OpenAI chat ----------------
     @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
+        # tiny API endpoint called by the floating widget
         try:
             import requests
         except ImportError:
-            return jsonify({"reply": "Server has no 'requests' package."}), 500
+            return jsonify({"reply": "Server: 'requests' package not installed."}), 500
 
         data = request.get_json(force=True) or {}
         user_message = (data.get("message") or "").strip()
         if not user_message:
             return jsonify({"reply": "Please type something."})
 
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_KEY")
+        # use the env vars you already showed in Azure
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv(
+            "AZURE_OPENAI_ENDPOINT".lower()
+        )
+        api_key = (
+            os.getenv("AZURE_OPENAI_API_KEY")
+            or os.getenv("AZURE_OPENAI_KEY")
+            or os.getenv("AZURE_OPENAI_KEY".lower())
+        )
         deployment = (
-            os.getenv("AZURE_OPENAI_MODEL")
-            or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            or os.getenv("AZURE_OPENAI_MODEL")
             or "mealmind-chat"
         )
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
 
-        if not endpoint or not key:
-            return jsonify({"reply": "Azure OpenAI not configured."}), 500
+        if not endpoint or not api_key:
+            return jsonify({"reply": "Azure OpenAI is not configured on the server."}), 500
 
-        # make sure endpoint ends with /
         if not endpoint.endswith("/"):
             endpoint = endpoint + "/"
 
         url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version={api_version}"
-        headers = {"Content-Type": "application/json", "api-key": key}
+        headers = {"Content-Type": "application/json", "api-key": api_key}
         payload = {
             "messages": [
-                {"role": "system", "content": "You are MealMind assistant."},
+                {
+                    "role": "system",
+                    "content": "You are MealMind, a friendly helper for a kitchen / dietary management app.",
+                },
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.6,
@@ -160,7 +170,15 @@ def create_app():
             reply = body["choices"][0]["message"]["content"]
             return jsonify({"reply": reply})
         except Exception:
-            return jsonify({"reply": "Can’t reach Azure OpenAI right now."}), 500
+            # don’t crash the UI if Azure is unreachable
+            return (
+                jsonify(
+                    {
+                        "reply": "I couldn't reach Azure OpenAI right now, but the button is wired correctly."
+                    }
+                ),
+                500,
+            )
 
     # ---------- AUTH ----------
     @app.route("/")
