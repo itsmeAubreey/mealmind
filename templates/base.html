@@ -1,152 +1,184 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>{% block title %}MealMind{% endblock %}</title>
-    <!-- main stylesheet -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <style>
-      body {
-        margin: 0;
-        background: #f3f4f8;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      /* top bar */
-      .topbar {
-        height: 52px;
-        background: #0f1829;
-        color: #fff;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 14px;
-      }
-      .brand-link {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        text-decoration: none;
-        color: inherit;
-      }
-      .brand-link img {
-        height: 30px;
-      }
-      .brand-name {
-        font-weight: 600;
-      }
-      .top-actions {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-      }
-      .logout-btn {
-        background: #f97316;
-        border: none;
-        color: #fff;
-        border-radius: 9999px;
-        padding: 6px 16px;
-        cursor: pointer;
-        font-weight: 600;
-        text-decoration: none;
-      }
-      main {
-        padding: 18px 22px 90px;
-      }
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}MealMind{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/mealmind-mark.svg') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
+  <style>
+    body {
+      background: #f3f4f8;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+    }
+    .topbar {
+      background: #0f172a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 1.5rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand img {
+      height: 34px;
+      width: 34px;
+    }
+    .btn-logout {
+      background: #f97316;
+      border: none;
+      padding: .45rem 1rem;
+      border-radius: .45rem;
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .content {
+      padding: 1.5rem;
+    }
 
-      /* floating chat bubble */
-      .chat-bubble {
-        position: fixed;
-        right: 18px;
-        bottom: 18px;
-        width: 58px;
-        height: 58px;
-        border-radius: 9999px;
-        background: #2563eb;
-        box-shadow: 0 10px 30px rgba(37, 99, 235, 0.35);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        cursor: pointer;
-        font-size: 26px;
-        z-index: 50;
-      }
-      .chat-panel {
-        position: fixed;
-        right: 90px;
-        bottom: 18px;
-        width: 310px;
-        max-height: 430px;
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 16px 40px rgba(15, 24, 41, 0.26);
-        display: none;
-        flex-direction: column;
-        overflow: hidden;
-        z-index: 50;
-      }
-      .chat-panel-header {
-        background: #0f1829;
-        color: #fff;
-        padding: 10px 14px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .chat-panel-body {
-        padding: 10px 14px;
-        flex: 1;
-        font-size: 13px;
-      }
-      .chat-input {
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        margin: 10px;
-        padding: 7px 10px;
-      }
-    </style>
-    {% block head %}{% endblock %}
-  </head>
-  <body>
-    <header class="topbar">
-      <!-- logo + name -> go to dashboard -->
-      <a class="brand-link" href="{{ url_for('dashboard') }}">
-        <img src="{{ url_for('static', filename='img/mealmind-mark.svg') }}" alt="MealMind">
-        <span class="brand-name">MealMind</span>
-      </a>
-
-      <div class="top-actions">
-        {% if current_user.is_authenticated and current_user.username %}
-          <span style="opacity:.8;font-size:13px;">{{ current_user.username }}</span>
-        {% endif %}
-        <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+    /* chat bubble */
+    .chat-bubble {
+      position: fixed;
+      bottom: 1.2rem;
+      right: 1.2rem;
+      width: 54px;
+      height: 54px;
+      background: #2563eb;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      color: #fff;
+      font-size: 1.6rem;
+      z-index: 999;
+    }
+    .chat-panel {
+      position: fixed;
+      bottom: 5rem;
+      right: 1.2rem;
+      width: 280px;
+      background: #fff;
+      border-radius: .75rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 999;
+    }
+    .chat-panel header {
+      background: #2563eb;
+      color: #fff;
+      padding: .5rem .75rem;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chat-body {
+      padding: .5rem;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: .85rem;
+    }
+    .chat-input {
+      display: flex;
+      gap: .25rem;
+      padding: .5rem;
+      border-top: 1px solid #e2e8f0;
+    }
+    .chat-input input {
+      flex: 1;
+      border: 1px solid #cbd5f5;
+      border-radius: .35rem;
+      padding: .25rem .4rem;
+    }
+    .chat-input button {
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      border-radius: .35rem;
+      padding: .25rem .6rem;
+      cursor: pointer;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <a href="{{ url_for('dashboard') }}" class="brand">
+      <img src="{{ url_for('static', filename='img/mealmind-mark.svg') }}" alt="MealMind">
+      <span>MealMind</span>
+    </a>
+    {% if current_user %}
+      <div style="display:flex; gap:1rem; align-items:center;">
+        <span>{{ current_user.first_name or current_user.username }}</span>
+        <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
       </div>
+    {% endif %}
+  </header>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- floating chat -->
+  <div class="chat-bubble" id="chatToggle">💬</div>
+  <div class="chat-panel" id="chatPanel">
+    <header>
+      <span>MealMind chat</span>
+      <button style="background:none;border:none;color:#fff;font-weight:bold;cursor:pointer" onclick="toggleChat()">×</button>
     </header>
-
-    <main>
-      {% block content %}{% endblock %}
-    </main>
-
-    <!-- floating dummy chatbot -->
-    <div class="chat-bubble" onclick="toggleChat()">💬</div>
-    <div id="chatPanel" class="chat-panel">
-      <div class="chat-panel-header">
-        <span>MealMind Assistant</span>
-        <button style="background:none;border:none;color:#fff;cursor:pointer;font-size:16px;" onclick="toggleChat()">×</button>
-      </div>
-      <div class="chat-panel-body">
-        <p style="margin-top:0">Hi! This is just a placeholder chat box.</p>
-        <p style="color:#6b7280">Later we can call your Azure OpenAI endpoint from here.</p>
-      </div>
-      <input class="chat-input" placeholder="Type a message…" />
+    <div class="chat-body" id="chatBody">
+      <div><strong>Bot:</strong> Hi! Ask me anything.</div>
     </div>
+    <div class="chat-input">
+      <input id="chatMsg" placeholder="Type here..." />
+      <button onclick="sendChat()">Send</button>
+    </div>
+  </div>
 
-    <script>
-      function toggleChat() {
-        const panel = document.getElementById("chatPanel");
-        panel.style.display = panel.style.display === "flex" ? "none" : "flex";
+  <script>
+    const chatToggle = document.getElementById('chatToggle');
+    const chatPanel  = document.getElementById('chatPanel');
+    const chatBody   = document.getElementById('chatBody');
+    const chatMsg    = document.getElementById('chatMsg');
+
+    function toggleChat() {
+      chatPanel.style.display = (chatPanel.style.display === 'flex') ? 'none' : 'flex';
+      chatPanel.style.flexDirection = 'column';
+    }
+    chatToggle.addEventListener('click', toggleChat);
+
+    async function sendChat() {
+      const text = chatMsg.value.trim();
+      if (!text) return;
+      chatBody.innerHTML += `<div><strong>You:</strong> ${text}</div>`;
+      chatMsg.value = '';
+      chatBody.scrollTop = chatBody.scrollHeight;
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({message: text})
+        });
+        const data = await res.json();
+        chatBody.innerHTML += `<div><strong>Bot:</strong> ${data.reply}</div>`;
+      } catch (err) {
+        chatBody.innerHTML += `<div><strong>Bot:</strong> Server error.</div>`;
       }
-    </script>
-  </body>
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
 </html>
