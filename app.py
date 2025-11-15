@@ -603,18 +603,200 @@ def create_app():
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
-    # ---------- MENU ----------
+        # ---------- MENU ----------
+
+    def _menu_common_context(current_menu=None, editing=False, values=None, errors=None):
+        """
+        Shared context for menu_builder.html:
+        - inventory_items: for the ingredient dropdown
+        - menus: for the right-side 'Existing Menus' table
+        - current_menu: when editing
+        - editing: True/False
+        - values: form values when validation fails
+        - errors: list of error messages
+        """
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
+        return {
+            "inventory_items": inventory_items,
+            "menus": menus,
+            "current_menu": current_menu,
+            "editing": editing,
+            "values": values,
+            "errors": errors or [],
+        }
+
     @app.route("/menu")
     @login_required
     def menu_hub():
         return render_template("menu_hub.html")
 
-    @app.route("/menu/builder")
+    # --- MENU BUILDER: CREATE ---
+
+    @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
     def menu_builder():
-        # FIX: send inventory so the dropdown isn’t empty
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-        return render_template("menu_builder.html", inventory_items=inventory_items)
+        """
+        Create a new reusable menu (Breakfast/Lunch/Dinner) with ingredients.
+        Uses menu_builder.html for both GET and POST.
+        """
+        errors = []
+        values = None
+
+        if request.method == "POST":
+            # Grab basic fields
+            meal_type = (request.form.get("meal_type") or "").strip()
+            title = (request.form.get("title") or "").strip()
+            description = (request.form.get("description") or "").strip()
+
+            values = {
+                "meal_type": meal_type,
+                "title": title,
+                "description": description,
+            }
+
+            if not meal_type:
+                errors.append("Meal type is required.")
+            if not title:
+                errors.append("Menu title is required.")
+
+            # Collect ingredient rows
+            ingredient_ids = request.form.getlist("ingredient_id")
+            quantities = request.form.getlist("quantity")
+
+            rows = []
+            for raw_id, raw_qty in zip(ingredient_ids, quantities):
+                inv_id = (raw_id or "").strip()
+                if not inv_id:
+                    continue
+                try:
+                    inv_id_int = int(inv_id)
+                except ValueError:
+                    continue
+
+                qty = _to_float(raw_qty, 0.0)
+                if qty <= 0:
+                    continue
+                rows.append((inv_id_int, qty))
+
+            if not rows:
+                errors.append("Add at least one ingredient with quantity > 0.")
+
+            if not errors:
+                # Create the Menu
+                menu = Menu(meal_type=meal_type, title=title, description=description)
+                db.session.add(menu)
+                db.session.flush()  # so menu.id is available
+
+                # Create MenuIngredient rows
+                for inv_id_int, qty in rows:
+                    ing = MenuIngredient(
+                        menu_id=menu.id,
+                        inventory_id=inv_id_int,
+                        quantity=qty,
+                    )
+                    db.session.add(ing)
+
+                db.session.commit()
+                flash("Menu created.", "success")
+                # Go straight into edit mode for the new menu
+                return redirect(url_for("menu_builder_edit", menu_id=menu.id))
+
+        ctx = _menu_common_context(
+            current_menu=None, editing=False, values=values, errors=errors
+        )
+        return render_template("menu_builder.html", **ctx)
+
+    # --- MENU BUILDER: EDIT ---
+
+    @app.route("/menu/builder/<int:menu_id>/edit", methods=["GET", "POST"])
+    @login_required
+    def menu_builder_edit(menu_id):
+        """
+        Edit an existing menu and its ingredients.
+        """
+        menu = Menu.query.get_or_404(menu_id)
+        errors = []
+        values = None
+
+        if request.method == "POST":
+            meal_type = (request.form.get("meal_type") or "").strip()
+            title = (request.form.get("title") or "").strip()
+            description = (request.form.get("description") or "").strip()
+
+            values = {
+                "meal_type": meal_type,
+                "title": title,
+                "description": description,
+            }
+
+            if not meal_type:
+                errors.append("Meal type is required.")
+            if not title:
+                errors.append("Menu title is required.")
+
+            ingredient_ids = request.form.getlist("ingredient_id")
+            quantities = request.form.getlist("quantity")
+
+            rows = []
+            for raw_id, raw_qty in zip(ingredient_ids, quantities):
+                inv_id = (raw_id or "").strip()
+                if not inv_id:
+                    continue
+                try:
+                    inv_id_int = int(inv_id)
+                except ValueError:
+                    continue
+
+                qty = _to_float(raw_qty, 0.0)
+                if qty <= 0:
+                    continue
+                rows.append((inv_id_int, qty))
+
+            if not rows:
+                errors.append("Add at least one ingredient with quantity > 0.")
+
+            if not errors:
+                # Update menu core fields
+                menu.meal_type = meal_type
+                menu.title = title
+                menu.description = description
+
+                # Replace ingredients
+                MenuIngredient.query.filter_by(menu_id=menu.id).delete()
+                for inv_id_int, qty in rows:
+                    ing = MenuIngredient(
+                        menu_id=menu.id,
+                        inventory_id=inv_id_int,
+                        quantity=qty,
+                    )
+                    db.session.add(ing)
+
+                db.session.commit()
+                flash("Menu updated.", "success")
+                return redirect(url_for("menu_builder_edit", menu_id=menu.id))
+
+        ctx = _menu_common_context(
+            current_menu=menu, editing=True, values=values, errors=errors
+        )
+        return render_template("menu_builder.html", **ctx)
+
+    # --- MENU BUILDER: DELETE ---
+
+    @app.route("/menu/builder/<int:menu_id>/delete", methods=["POST"])
+    @login_required
+    def menu_builder_delete(menu_id):
+        """
+        Delete a menu and its ingredient rows.
+        """
+        menu = Menu.query.get_or_404(menu_id)
+        MenuIngredient.query.filter_by(menu_id=menu.id).delete()
+        db.session.delete(menu)
+        db.session.commit()
+        flash("Menu deleted.", "success")
+        return redirect(url_for("menu_builder"))
+
+    # --- DAILY MENU (placeholder pages you already had) ---
 
     @app.route("/menu/daily")
     @login_required
@@ -628,6 +810,8 @@ def create_app():
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
+    # --- API for scheduler to load menu items ---
+
     @app.route("/api/menu/<int:menu_id>/items")
     @login_required
     def api_menu_items(menu_id):
@@ -636,21 +820,18 @@ def create_app():
         Used by menu_scheduler.html JavaScript via fetch().
         """
         menu = Menu.query.get_or_404(menu_id)
-
-        # Try to load ingredients for this menu
         ingredients = MenuIngredient.query.filter_by(menu_id=menu.id).all()
 
         items = []
         for ing in ingredients:
-            # Most likely fields: inventory_item_id, quantity
+            # We know template uses ing.inventory_id; model likely matches that.
             inv = None
             try:
-                if getattr(ing, "inventory_item_id", None):
-                    inv = InventoryItem.query.get(ing.inventory_item_id)
+                if getattr(ing, "inventory_id", None):
+                    inv = InventoryItem.query.get(ing.inventory_id)
             except Exception:
                 inv = None
 
-            # Build safe name/unit even if some fields are missing
             name = ""
             unit = ""
             if inv is not None:
@@ -669,7 +850,7 @@ def create_app():
             items.append(
                 {
                     "id": ing.id,
-                    "inventory_id": getattr(ing, "inventory_item_id", None),
+                    "inventory_id": getattr(ing, "inventory_id", None),
                     "name": name,
                     "quantity": qty,
                     "unit": unit,
@@ -684,8 +865,8 @@ def create_app():
             }
         )
 
+    # --- MENU SCHEDULER (daily) ---
 
-    
     @app.route("/menu/scheduler", methods=["GET", "POST"])
     @login_required
     def menu_scheduler():
@@ -722,14 +903,6 @@ def create_app():
                 )
                 db.session.add(ms)
 
-                # NOTE:
-                # We are *not* deducting inventory here to keep it safe/simple.
-                # If you want, we can later add logic that:
-                #  - looks up MenuIngredient rows for this menu
-                #  - reads the posted quantities like f"{meal}_qty_{ing.id}"
-                #  - subtracts those amounts from InventoryItem.quantity
-                #  - optionally creates MenuScheduleItem records
-
             db.session.commit()
             flash("Menu schedule saved.", "success")
             return redirect(url_for("menu_scheduler", date=target_date.isoformat()))
@@ -759,6 +932,7 @@ def create_app():
             existing=existing,
         )
 
+    # --- WEEKLY PLANNED MENUS (read-only views) ---
 
     @app.route("/menu/planned")
     @login_required
@@ -814,6 +988,8 @@ def create_app():
     @login_required
     def planned_menu_view():
         return render_template("planned_menu_view.html")
+
+
     # ---------- health ----------
     @app.route("/healthz")
     def healthz():
