@@ -8,11 +8,15 @@
   to {{ week_end.strftime('%m/%d/%y') }}
 </p>
 
-<p style="margin: 8px 0 12px;">
-  <a href="{{ prev_url }}">&larr; Previous Week</a>
-  &nbsp;&nbsp;
-  <a href="{{ next_url }}">Next Week &rarr;</a>
-</p>
+<div class="week-nav">
+  <div>
+    <a href="{{ prev_url }}">&larr; Previous Week</a>
+  </div>
+  <div>
+    <a href="{{ next_url }}">Next Week &rarr;</a>
+  </div>
+</div>
+
 
 <table class="planned-table">
   <thead>
@@ -76,6 +80,13 @@
   }
   .planned-table tbody tr:nth-child(odd) td {
     background-color: #f9fafb;
+  }
+   /* 👇 new bit */
+  .week-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 8px 0 12px;
   }
 </style>
 {% endblock %}
