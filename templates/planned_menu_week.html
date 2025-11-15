@@ -1,38 +1,45 @@
 {% extends "base.html" %}
-{% block title %}Planned Menus{% endblock %}
+{% block title %}Planned Menu for the Week{% endblock %}
 
 {% block content %}
-<div class="card" style="padding:20px;">
-  <h2 style="margin-bottom:10px;">Planned Menu for the Week</h2>
-  <p>
-    Service for {{ week_start.strftime('%m/%d/%y') }} to {{ week_end.strftime('%m/%d/%y') }}
-  </p>
+<h1>Planned Menu for the Week</h1>
+<p>
+  Service for {{ week_start.strftime('%m/%d/%y') }}
+  to {{ week_end.strftime('%m/%d/%y') }}
+</p>
 
-  <!-- Week navigation -->
-  <div style="display:flex; justify-content:space-between; margin:15px 0;">
-    <a class="btn btn-secondary" href="{{ prev_url }}">← Previous Week</a>
-    <a class="btn btn-secondary" href="{{ next_url }}">Next Week →</a>
-  </div>
+<p>
+  <a href="{{ prev_url }}">&larr; Previous Week</a>
+  &nbsp;&nbsp;
+  <a href="{{ next_url }}">Next Week &rarr;</a>
+</p>
 
-  <table border="1" width="100%" style="border-collapse:collapse; text-align:center;">
+<table class="table table-fixed" style="margin-top: 12px;">
+  <thead>
     <tr>
-      <th style="background:#f0f0f0;">Meal</th>
-      {% for d in days %}
-        <th style="background:#f0f0f0;">{{ d.dow }}</th>
+      <th style="width: 120px;">Meal</th>
+      {% for day in days %}
+        <th>
+          {{ day.date.strftime('%a') }}<br>
+          {{ day.date.strftime('%m/%d') }}
+        </th>
       {% endfor %}
     </tr>
-
+  </thead>
+  <tbody>
     {% set meals = ["Breakfast", "Lunch", "Dinner"] %}
     {% for meal in meals %}
       <tr>
-        <th style="background:#f7f7f7; text-align:left; padding:6px 10px;">{{ meal }}</th>
-        {% for d in days %}
-          {% set day_obj = d.date %}
-          <td style="padding:6px 8px;">
-            {% set items = grouped.get(day_obj, {}).get(meal, []) %}
-            {% if items and items|length > 0 %}
-              {% for it in items %}
-                <div>{{ it.menu.title if it.menu_id else 'Custom' }}</div>                
+        <th>{{ meal }}</th>
+        {% for day in days %}
+          {# day_bucket is grouped[date] = { "Breakfast": [...], "Lunch": [...], ... } #}
+          {% set day_bucket = grouped.get(day.date, {}) %}
+          {# titles is a list of plain strings like ["sample1", "sample2"] #}
+          {% set titles = day_bucket.get(meal, []) %}
+          <td>
+            {% if titles and titles|length > 0 %}
+              {% for t in titles %}
+                <div>{{ t }}</div>
               {% endfor %}
             {% else %}
               &mdash;
@@ -41,34 +48,12 @@
         {% endfor %}
       </tr>
     {% endfor %}
-  </table>
-<hr class="my-4">
+  </tbody>
+</table>
 
-<div class="bottom-links">
-  <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
-  <span class="sep">|</span>
-  <a href="{{ url_for('menu_hub') }}" class="back-link">Go to Menu Dashboard</a>
-</div>
-
-<style>
-  .bottom-links{
-    margin: 8px 0 4px;
-    text-align: left;                /* left-aligned like your screenshot */
-  }
-  .bottom-links .back-link{
-    color: #2563eb;                  /* link blue */
-    text-decoration: underline;
-    font-weight: 600;
-  }
-  .bottom-links .back-link:hover{
-    color: #1e40af;                  /* darker on hover */
-    text-decoration: underline;
-  }
-  .bottom-links .sep{
-    margin: 0 .5rem;
-    color: #64748b;                  /* subtle gray for the bar */
-  }
-</style>
-
-
+<p style="margin-top: 12px;">
+  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+  &nbsp; | &nbsp;
+  <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
+</p>
 {% endblock %}
