@@ -628,41 +628,137 @@ def create_app():
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
-    @app.route("/menu/scheduler")
+    @app.route("/api/menu/<int:menu_id>/items")
+    @login_required
+    def api_menu_items(menu_id):
+        """
+        Small JSON API so the scheduler can load the items for a saved menu.
+        Used by menu_scheduler.html JavaScript via fetch().
+        """
+        menu = Menu.query.get_or_404(menu_id)
+
+        # Try to load ingredients for this menu
+        ingredients = MenuIngredient.query.filter_by(menu_id=menu.id).all()
+
+        items = []
+        for ing in ingredients:
+            # Most likely fields: inventory_item_id, quantity
+            inv = None
+            try:
+                if getattr(ing, "inventory_item_id", None):
+                    inv = InventoryItem.query.get(ing.inventory_item_id)
+            except Exception:
+                inv = None
+
+            # Build safe name/unit even if some fields are missing
+            name = ""
+            unit = ""
+            if inv is not None:
+                name = inv.name or ""
+                unit = getattr(inv, "unit", "") or ""
+            else:
+                # fallback if MenuIngredient has name/unit fields
+                name = getattr(ing, "name", "") or ""
+                unit = getattr(ing, "unit", "") or ""
+
+            try:
+                qty = float(getattr(ing, "quantity", 0) or 0)
+            except Exception:
+                qty = 0.0
+
+            items.append(
+                {
+                    "id": ing.id,
+                    "inventory_id": getattr(ing, "inventory_item_id", None),
+                    "name": name,
+                    "quantity": qty,
+                    "unit": unit,
+                }
+            )
+
+        return jsonify(
+            {
+                "menu_id": menu.id,
+                "title": menu.title,
+                "items": items,
+            }
+        )
+
+
+    
+    @app.route("/menu/scheduler", methods=["GET", "POST"])
     @login_required
     def menu_scheduler():
+        """
+        Daily menu scheduler:
+        - GET: show the form for a given date (default = today)
+        - POST: save schedules for Breakfast/Lunch/Dinner for that date
+        """
+        # 1) Handle form submission (save schedule)
+        if request.method == "POST":
+            date_str = request.form.get("date") or ""
+            target_date = _parse_date(date_str) or date.today()
+            notes = (request.form.get("notes") or "").strip()
+
+            # Clear any existing schedules for that date, so the new choices replace them
+            MenuSchedule.query.filter_by(date=target_date).delete()
+
+            # For each meal, see if a menu was chosen
+            for meal in ["Breakfast", "Lunch", "Dinner"]:
+                menu_id_str = request.form.get(f"{meal}_menu")
+                if not menu_id_str:
+                    continue
+
+                try:
+                    menu_id = int(menu_id_str)
+                except ValueError:
+                    continue
+
+                ms = MenuSchedule(
+                    date=target_date,
+                    meal_type=meal,
+                    menu_id=menu_id,
+                    notes=notes,
+                )
+                db.session.add(ms)
+
+                # NOTE:
+                # We are *not* deducting inventory here to keep it safe/simple.
+                # If you want, we can later add logic that:
+                #  - looks up MenuIngredient rows for this menu
+                #  - reads the posted quantities like f"{meal}_qty_{ing.id}"
+                #  - subtracts those amounts from InventoryItem.quantity
+                #  - optionally creates MenuScheduleItem records
+
+            db.session.commit()
+            flash("Menu schedule saved.", "success")
+            return redirect(url_for("menu_scheduler", date=target_date.isoformat()))
+
+        # 2) GET: show the scheduler for a specific date (or today)
+        date_str = request.args.get("date") or ""
+        target_date = _parse_date(date_str) or date.today()
+        date_value = target_date.isoformat()
+
+        # Load all menus and bucket them by meal type
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
         for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
 
-        today = date.today()
-        monday = today - timedelta(days=today.weekday())
-        week_end = monday + timedelta(days=6)
-
-        schedules = (
-            MenuSchedule.query.filter(
-                MenuSchedule.date >= monday, MenuSchedule.date <= week_end
-            )
-            .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
+        # Existing schedules already saved for that day
+        existing = (
+            MenuSchedule.query.filter_by(date=target_date)
+            .order_by(MenuSchedule.meal_type.asc())
             .all()
         )
-
-        grouped = {}
-        for s in schedules:
-            day_bucket = grouped.setdefault(s.date, {})
-            day_bucket.setdefault(s.meal_type, []).append(s)
-
-        days = [{"date": monday + timedelta(days=i)} for i in range(7)]
-        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
 
         return render_template(
             "menu_scheduler.html",
             menus_by_meal=menus_by_meal,
-            days=days,
-            grouped=grouped,
-            inventory_items=inventory_items,
+            date_value=date_value,
+            existing=existing,
         )
+
 
     @app.route("/menu/planned")
     @login_required
