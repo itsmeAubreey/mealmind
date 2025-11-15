@@ -8,21 +8,19 @@
   to {{ week_end.strftime('%m/%d/%y') }}
 </p>
 
-<p>
+<p style="margin: 8px 0 12px;">
   <a href="{{ prev_url }}">&larr; Previous Week</a>
   &nbsp;&nbsp;
   <a href="{{ next_url }}">Next Week &rarr;</a>
 </p>
 
-<table class="table table-fixed" style="margin-top: 12px;">
+<table class="planned-table">
   <thead>
     <tr>
-      <th style="width: 120px;">Meal</th>
-      {% for day in days %}
-        <th>
-          {{ day.date.strftime('%a') }}<br>
-          {{ day.date.strftime('%m/%d') }}
-        </th>
+      <th class="meal-col">Meal</th>
+      {# 7 generic day columns, like your original layout #}
+      {% for _ in days %}
+        <th></th>
       {% endfor %}
     </tr>
   </thead>
@@ -30,11 +28,9 @@
     {% set meals = ["Breakfast", "Lunch", "Dinner"] %}
     {% for meal in meals %}
       <tr>
-        <th>{{ meal }}</th>
+        <th class="meal-col">{{ meal }}</th>
         {% for day in days %}
-          {# day_bucket is grouped[date] = { "Breakfast": [...], "Lunch": [...], ... } #}
           {% set day_bucket = grouped.get(day.date, {}) %}
-          {# titles is a list of plain strings like ["sample1", "sample2"] #}
           {% set titles = day_bucket.get(meal, []) %}
           <td>
             {% if titles and titles|length > 0 %}
@@ -56,4 +52,30 @@
   &nbsp; | &nbsp;
   <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
 </p>
+
+<style>
+  .planned-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 4px;
+  }
+  .planned-table th,
+  .planned-table td {
+    border: 1px solid #d4d4d4;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  .planned-table th.meal-col {
+    text-align: left;
+    width: 110px;
+    white-space: nowrap;
+  }
+  .planned-table thead th {
+    background-color: #f3f4f6;
+    font-weight: 600;
+  }
+  .planned-table tbody tr:nth-child(odd) td {
+    background-color: #f9fafb;
+  }
+</style>
 {% endblock %}
