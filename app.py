@@ -490,39 +490,98 @@ def create_app():
         for it in rows:
             qty = it.quantity or 0.0
             thr = it.low_stock_threshold or 0.0
-            is_low = (qty <= thr) if it.low_stock_threshold is not None else False
-            items.append({"obj": it, "is_low": is_low})
-
+    
+            is_out = qty <= 0
+            # only "low" if we actually have some stock but it's under/at the threshold
+            if it.low_stock_threshold is not None:
+                is_low = (qty > 0) and (qty <= thr)
+            else:
+                is_low = False
+    
+            if is_out:
+                status = "out"
+            elif is_low:
+                status = "low"
+            else:
+                status = "ok"
+    
+            items.append(
+                {
+                    "obj": it,
+                    "qty": qty,
+                    "is_low": is_low,
+                    "is_out": is_out,
+                    "status": status,
+                }
+            )
+    
         if show == "low":
-            items = [x for x in items if x["is_low"]]
-
+            # show both LOW and OUT OF STOCK when filtering low items
+            items = [x for x in items if x["status"] in ("low", "out")]
+    
         return render_template("inventory_list.html", items=items, q=q, show=show)
 
-    @app.route("/inventory/new", methods=["GET", "POST"])
-    @login_required
-    def inventory_new():
-        units = ["pcs", "kg", "g", "L", "mL", "pack"]
-        if request.method == "POST":
-            it = InventoryItem(
-                name=request.form.get("name") or "",
-                unit=request.form.get("unit") or "pcs",
-                quantity=_to_float(request.form.get("quantity"), 0.0),
-                low_stock_threshold=_to_float(
-                    request.form.get("low_stock_threshold"), 0.0
-                ),
+        @app.route("/inventory/new", methods=["GET", "POST"])
+        @login_required
+        def inventory_new():
+            units = ["pcs", "kg", "g", "L", "mL", "pack"]
+            errors = []
+            values = {}
+    
+            if request.method == "POST":
+                raw_name = (request.form.get("name") or "").strip()
+                unit = request.form.get("unit") or "pcs"
+                quantity = _to_float(request.form.get("quantity"), 0.0)
+                low_thr = _to_float(request.form.get("low_stock_threshold"), 0.0)
+    
+                values = {
+                    "name": raw_name,
+                    "unit": unit,
+                    "quantity": quantity,
+                    "low_stock_threshold": low_thr,
+                }
+    
+                if not raw_name:
+                    errors.append("Item name is required.")
+    
+                # Check for near-duplicate names (carrot vs carrots, case, spaces)
+                conflict = None
+                canon_new = _canonical_item_name(raw_name)
+                if canon_new:
+                    existing_items = InventoryItem.query.all()
+                    for existing in existing_items:
+                        if _canonical_item_name(existing.name) == canon_new:
+                            conflict = existing
+                            break
+    
+                if conflict:
+                    errors.append(
+                        f"An item with a very similar name already exists: '{conflict.name}'. "
+                        "Please edit that item instead of creating a duplicate."
+                    )
+    
+                if not errors:
+                    it = InventoryItem(
+                        name=raw_name,
+                        unit=unit,
+                        quantity=quantity,
+                        low_stock_threshold=low_thr,
+                    )
+                    db.session.add(it)
+                    db.session.commit()
+                    flash("Item added to inventory.", "success")
+                    return redirect(url_for("inventory_list"))
+    
+            return render_template(
+                "inventory_form.html",
+                mode="new",
+                item_id=None,
+                values=values,
+                errors=errors,
+                units=units,
+                limited=False,
             )
-            db.session.add(it)
-            db.session.commit()
-            return redirect(url_for("inventory_list"))
-        return render_template(
-            "inventory_form.html",
-            mode="new",
-            item_id=None,
-            values={},
-            errors=[],
-            units=units,
-            limited=False,
-        )
+
 
     @app.route("/inventory/<int:iid>/edit", methods=["GET", "POST"])
     @login_required
