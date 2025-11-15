@@ -32,10 +32,7 @@
             {% set items = grouped.get(day_obj, {}).get(meal, []) %}
             {% if items and items|length > 0 %}
               {% for it in items %}
-                <div>{{ it.menu_title }}</div>
-
-
-                
+                <div>{{ it.menu.title if it.menu_id else 'Custom' }}</div>                
               {% endfor %}
             {% else %}
               &mdash;
