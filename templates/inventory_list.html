@@ -1,65 +1,125 @@
 {% extends "base.html" %}
 {% block title %}Inventory{% endblock %}
+
 {% block content %}
+<h1>Inventory</h1>
 
-<h2 class="mb-3">Inventory</h2>
-
-<form method="get" class="mb-3" style="display:flex;gap:8px;flex-wrap:wrap;">
-  <input name="q" value="{{ q or '' }}" placeholder="Search item..." class="form-control" style="max-width:260px;">
-  <select name="show" class="form-select" style="max-width:160px;">
-    <option value="all" {{ 'selected' if show=='all' else '' }}>All</option>
-    <option value="low" {{ 'selected' if show=='low' else '' }}>Low only</option>
+<form method="get" action="{{ url_for('inventory_list') }}" class="inventory-filters">
+  <input
+    type="text"
+    name="q"
+    value="{{ q }}"
+    placeholder="Search item..."
+  />
+  <select name="show">
+    <option value="all" {% if show == 'all' %}selected{% endif %}>All</option>
+    <option value="low" {% if show == 'low' %}selected{% endif %}>Low / Out of stock</option>
   </select>
-  <button class="btn btn-primary">Filter</button>
-
-  {% if current_user.role in ['Manager','Cook'] %}
-    <a href="{{ url_for('inventory_new') }}" class="btn btn-success">+ New Item</a>
-  {% endif %}
-  {# removed the Export CSV button because the route doesn't exist on Azure #}
+  <button type="submit">Filter</button>
+  <a href="{{ url_for('inventory_new') }}" class="link-new">+ New Item</a>
 </form>
 
-<div class="table-responsive">
-  <table class="table table-striped align-middle" style="table-layout:fixed;">
-    <thead>
+<table class="inventory-table">
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Unit</th>
+      <th>Quantity</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
       <tr>
-        <th style="width:34%;">Item</th>
-        <th style="width:12%;">Unit</th>
-        <th style="width:24%;">Quantity</th>
-        <th style="width:30%;">Actions</th>
+        <td>{{ item.obj.name }}</td>
+        <td>{{ item.obj.unit }}</td>
+        <td>
+          {{ "%.2f"|format(item.qty) }}
+          {% if item.status == 'out' %}
+            <span class="status status-out">OUT OF STOCK</span>
+          {% elif item.status == 'low' %}
+            <span class="status status-low">LOW</span>
+          {% endif %}
+        </td>
+        <td class="inventory-actions">
+          <form
+            method="post"
+            action="{{ url_for('inventory_bump', iid=item.obj.id, q=q, show=show) }}"
+            style="display:inline;"
+          >
+            <input type="hidden" name="delta" value="-1">
+            <button type="submit" class="btn-qty">−</button>
+          </form>
+          <form
+            method="post"
+            action="{{ url_for('inventory_bump', iid=item.obj.id, q=q, show=show) }}"
+            style="display:inline;"
+          >
+            <input type="hidden" name="delta" value="1">
+            <button type="submit" class="btn-qty">+</button>
+          </form>
+          <a href="{{ url_for('inventory_edit', iid=item.obj.id) }}">Edit</a>
+        </td>
       </tr>
-    </thead>
-    <tbody>
-      {% for row in items %}
-        {% set it = row.obj %}
-        {% set is_low = row.is_low %}
-        <tr {% if is_low %}class="table-warning"{% endif %}>
-          <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ it.name }}</td>
-          <td>{{ it.unit }}</td>
-          <td>
-            <strong>{{ '%.2f'|format(it.quantity or 0) }}</strong>
-            {% if is_low %}
-              <span class="badge bg-danger ms-2">LOW</span>
-            {% endif %}
-          </td>
-          <td style="display:flex;gap:6px;flex-wrap:wrap;">
-            <form method="post" action="{{ url_for('inventory_bump', iid=it.id, q=q or '', show=show) }}">
-              <input type="hidden" name="delta" value="-1">
-              <button class="btn btn-outline-secondary" title="Decrease by 1" {% if current_user.role not in ['Manager','Cook','Dietary Aide'] %}disabled{% endif %}>−</button>
-            </form>
-            <form method="post" action="{{ url_for('inventory_bump', iid=it.id, q=q or '', show=show) }}">
-              <input type="hidden" name="delta" value="1">
-              <button class="btn btn-outline-secondary" title="Increase by 1" {% if current_user.role not in ['Manager','Cook','Dietary Aide'] %}disabled{% endif %}>+</button>
-            </form>
+    {% endfor %}
+  </tbody>
+</table>
 
-            {% if current_user.role in ['Manager','Cook'] %}
-              <a href="{{ url_for('inventory_edit', iid=it.id) }}" class="btn btn-primary">Edit</a>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<p style="margin-top: 12px;">
+  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</p>
 
-<p class="mt-3"><a href="{{ url_for('dashboard') }}">← Back to Dashboard</a></p>
+<style>
+  .inventory-filters {
+    margin: 8px 0 12px;
+  }
+  .inventory-filters input[type="text"] {
+    padding: 4px 6px;
+    width: 220px;
+  }
+  .inventory-filters select {
+    padding: 4px 6px;
+    margin-left: 4px;
+  }
+  .inventory-filters button {
+    padding: 4px 10px;
+    margin-left: 4px;
+  }
+  .inventory-filters .link-new {
+    margin-left: 10px;
+  }
+
+  .inventory-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .inventory-table th,
+  .inventory-table td {
+    border: 1px solid #d4d4d4;
+    padding: 6px 8px;
+    text-align: left;
+  }
+  .inventory-table thead th {
+    background-color: #f3f4f6;
+    font-weight: 600;
+  }
+  .inventory-actions {
+    white-space: nowrap;
+  }
+  .btn-qty {
+    padding: 3px 8px;
+    margin-right: 2px;
+  }
+  .status {
+    margin-left: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .status-low {
+    color: #b45309; /* amber-ish */
+  }
+  .status-out {
+    color: #b91c1c; /* red-ish */
+  }
+</style>
 {% endblock %}
