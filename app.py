@@ -603,18 +603,11 @@ def create_app():
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
+
         # ---------- MENU ----------
 
     def _menu_common_context(current_menu=None, editing=False, values=None, errors=None):
-        """
-        Shared context for menu_builder.html:
-        - inventory_items: for the ingredient dropdown
-        - menus: for the right-side 'Existing Menus' table
-        - current_menu: when editing
-        - editing: True/False
-        - values: form values when validation fails
-        - errors: list of error messages
-        """
+        """Shared context builder for menu_builder.html."""
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         return {
@@ -631,20 +624,21 @@ def create_app():
     def menu_hub():
         return render_template("menu_hub.html")
 
-    # --- MENU BUILDER: CREATE ---
+    # ---------------- MENU BUILDER: CREATE ----------------
 
     @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
     def menu_builder():
-        """
-        Create a new reusable menu (Breakfast/Lunch/Dinner) with ingredients.
-        Uses menu_builder.html for both GET and POST.
+        """Create a new reusable menu with ingredients.
+
+        Requirements:
+        - If save is successful, redirect back to blank form.
+        - If inventory is insufficient for any ingredient, do NOT save and show an error.
         """
         errors = []
         values = None
 
         if request.method == "POST":
-            # Grab basic fields
             meal_type = (request.form.get("meal_type") or "").strip()
             title = (request.form.get("title") or "").strip()
             description = (request.form.get("description") or "").strip()
@@ -660,61 +654,82 @@ def create_app():
             if not title:
                 errors.append("Menu title is required.")
 
-            # Collect ingredient rows
             ingredient_ids = request.form.getlist("ingredient_id")
             quantities = request.form.getlist("quantity")
-
             rows = []
             for raw_id, raw_qty in zip(ingredient_ids, quantities):
-                inv_id = (raw_id or "").strip()
-                if not inv_id:
+                inv_id_str = (raw_id or "").strip()
+                if not inv_id_str:
                     continue
                 try:
-                    inv_id_int = int(inv_id)
+                    inv_id = int(inv_id_str)
                 except ValueError:
                     continue
-
                 qty = _to_float(raw_qty, 0.0)
                 if qty <= 0:
                     continue
-                rows.append((inv_id_int, qty))
+                rows.append((inv_id, qty))
 
             if not rows:
                 errors.append("Add at least one ingredient with quantity > 0.")
 
+            # Check inventory availability
+            insufficient = []
+            if not errors and rows:
+                inv_ids = [inv_id for inv_id, _ in rows]
+                inv_items = InventoryItem.query.filter(
+                    InventoryItem.id.in_(inv_ids)
+                ).all()
+                inv_map = {i.id: i for i in inv_items}
+                for inv_id, qty in rows:
+                    inv = inv_map.get(inv_id)
+                    available = _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    if inv is None or qty > available:
+                        name = inv.name if inv else f"Item {inv_id}"
+                        unit = getattr(inv, "unit", "") or ""
+                        insufficient.append((name, qty, available, unit))
+
+                if insufficient:
+                    errors.append(
+                        "Cannot save menu: some ingredients do not have enough stock in Inventory."
+                    )
+
+            if insufficient:
+                for name, needed, have, unit in insufficient:
+                    flash(
+                        f"{name}: need {needed:g} {unit or ''}, but only {have:g} available.",
+                        "error",
+                    )
+
             if not errors:
-                # Create the Menu
                 menu = Menu(meal_type=meal_type, title=title, description=description)
                 db.session.add(menu)
-                db.session.flush()  # so menu.id is available
+                db.session.flush()
 
-                # Create MenuIngredient rows
-                for inv_id_int, qty in rows:
+                for inv_id, qty in rows:
                     ing = MenuIngredient(
                         menu_id=menu.id,
-                        inventory_id=inv_id_int,
+                        inventory_id=inv_id,
                         quantity=qty,
                     )
                     db.session.add(ing)
 
                 db.session.commit()
                 flash("Menu created.", "success")
-                # Go straight into edit mode for the new menu
-                return redirect(url_for("menu_builder_edit", menu_id=menu.id))
+                # ✅ Go back to a blank form after successful save
+                return redirect(url_for("menu_builder"))
 
         ctx = _menu_common_context(
             current_menu=None, editing=False, values=values, errors=errors
         )
         return render_template("menu_builder.html", **ctx)
 
-    # --- MENU BUILDER: EDIT ---
+    # ---------------- MENU BUILDER: EDIT ----------------
 
     @app.route("/menu/builder/<int:menu_id>/edit", methods=["GET", "POST"])
     @login_required
     def menu_builder_edit(menu_id):
-        """
-        Edit an existing menu and its ingredients.
-        """
+        """Edit an existing menu and its ingredients, enforcing inventory checks."""
         menu = Menu.query.get_or_404(menu_id)
         errors = []
         values = None
@@ -737,37 +752,61 @@ def create_app():
 
             ingredient_ids = request.form.getlist("ingredient_id")
             quantities = request.form.getlist("quantity")
-
             rows = []
             for raw_id, raw_qty in zip(ingredient_ids, quantities):
-                inv_id = (raw_id or "").strip()
-                if not inv_id:
+                inv_id_str = (raw_id or "").strip()
+                if not inv_id_str:
                     continue
                 try:
-                    inv_id_int = int(inv_id)
+                    inv_id = int(inv_id_str)
                 except ValueError:
                     continue
-
                 qty = _to_float(raw_qty, 0.0)
                 if qty <= 0:
                     continue
-                rows.append((inv_id_int, qty))
+                rows.append((inv_id, qty))
 
             if not rows:
                 errors.append("Add at least one ingredient with quantity > 0.")
 
+            # Check inventory availability
+            insufficient = []
+            if not errors and rows:
+                inv_ids = [inv_id for inv_id, _ in rows]
+                inv_items = InventoryItem.query.filter(
+                    InventoryItem.id.in_(inv_ids)
+                ).all()
+                inv_map = {i.id: i for i in inv_items}
+                for inv_id, qty in rows:
+                    inv = inv_map.get(inv_id)
+                    available = _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    if inv is None or qty > available:
+                        name = inv.name if inv else f"Item {inv_id}"
+                        unit = getattr(inv, "unit", "") or ""
+                        insufficient.append((name, qty, available, unit))
+
+                if insufficient:
+                    errors.append(
+                        "Cannot save menu: some ingredients do not have enough stock in Inventory."
+                    )
+
+            if insufficient:
+                for name, needed, have, unit in insufficient:
+                    flash(
+                        f"{name}: need {needed:g} {unit or ''}, but only {have:g} available.",
+                        "error",
+                    )
+
             if not errors:
-                # Update menu core fields
                 menu.meal_type = meal_type
                 menu.title = title
                 menu.description = description
 
-                # Replace ingredients
                 MenuIngredient.query.filter_by(menu_id=menu.id).delete()
-                for inv_id_int, qty in rows:
+                for inv_id, qty in rows:
                     ing = MenuIngredient(
                         menu_id=menu.id,
-                        inventory_id=inv_id_int,
+                        inventory_id=inv_id,
                         quantity=qty,
                     )
                     db.session.add(ing)
@@ -781,14 +820,11 @@ def create_app():
         )
         return render_template("menu_builder.html", **ctx)
 
-    # --- MENU BUILDER: DELETE ---
+    # ---------------- MENU BUILDER: DELETE ----------------
 
     @app.route("/menu/builder/<int:menu_id>/delete", methods=["POST"])
     @login_required
     def menu_builder_delete(menu_id):
-        """
-        Delete a menu and its ingredient rows.
-        """
         menu = Menu.query.get_or_404(menu_id)
         MenuIngredient.query.filter_by(menu_id=menu.id).delete()
         db.session.delete(menu)
@@ -796,7 +832,7 @@ def create_app():
         flash("Menu deleted.", "success")
         return redirect(url_for("menu_builder"))
 
-    # --- DAILY MENU (placeholder pages you already had) ---
+    # ---------------- DAILY MENU (PLACEHOLDERS) ----------------
 
     @app.route("/menu/daily")
     @login_required
@@ -810,42 +846,24 @@ def create_app():
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
-    # --- API for scheduler to load menu items ---
+    # ---------------- API: MENU ITEMS FOR SCHEDULER ----------------
 
     @app.route("/api/menu/<int:menu_id>/items")
     @login_required
     def api_menu_items(menu_id):
-        """
-        Small JSON API so the scheduler can load the items for a saved menu.
-        Used by menu_scheduler.html JavaScript via fetch().
-        """
+        """Return menu ingredients as JSON for the scheduler JS."""
         menu = Menu.query.get_or_404(menu_id)
         ingredients = MenuIngredient.query.filter_by(menu_id=menu.id).all()
 
         items = []
         for ing in ingredients:
-            # We know template uses ing.inventory_id; model likely matches that.
             inv = None
-            try:
-                if getattr(ing, "inventory_id", None):
-                    inv = InventoryItem.query.get(ing.inventory_id)
-            except Exception:
-                inv = None
+            if getattr(ing, "inventory_id", None):
+                inv = InventoryItem.query.get(ing.inventory_id)
 
-            name = ""
-            unit = ""
-            if inv is not None:
-                name = inv.name or ""
-                unit = getattr(inv, "unit", "") or ""
-            else:
-                # fallback if MenuIngredient has name/unit fields
-                name = getattr(ing, "name", "") or ""
-                unit = getattr(ing, "unit", "") or ""
-
-            try:
-                qty = float(getattr(ing, "quantity", 0) or 0)
-            except Exception:
-                qty = 0.0
+            name = inv.name if inv else getattr(ing, "name", "") or ""
+            unit = getattr(inv, "unit", "") or getattr(ing, "unit", "") or ""
+            qty = _to_float(getattr(ing, "quantity", 0.0), 0.0)
 
             items.append(
                 {
@@ -857,68 +875,127 @@ def create_app():
                 }
             )
 
-        return jsonify(
-            {
-                "menu_id": menu.id,
-                "title": menu.title,
-                "items": items,
-            }
-        )
+        return jsonify({"menu_id": menu.id, "title": menu.title, "items": items})
 
-    # --- MENU SCHEDULER (daily) ---
+    # ---------------- MENU SCHEDULER (DAILY) ----------------
 
     @app.route("/menu/scheduler", methods=["GET", "POST"])
     @login_required
     def menu_scheduler():
+        """Schedule menus for a single day and deduct inventory.
+
+        - On POST:
+            * Validate there is at least one menu.
+            * Calculate total ingredient usage across Breakfast/Lunch/Dinner.
+            * If any ingredient would go below zero, abort and show errors.
+            * Otherwise, deduct from Inventory and save MenuSchedule rows.
         """
-        Daily menu scheduler:
-        - GET: show the form for a given date (default = today)
-        - POST: save schedules for Breakfast/Lunch/Dinner for that date
-        """
-        # 1) Handle form submission (save schedule)
+        errors = []
+
         if request.method == "POST":
             date_str = request.form.get("date") or ""
             target_date = _parse_date(date_str) or date.today()
             notes = (request.form.get("notes") or "").strip()
 
-            # Clear any existing schedules for that date, so the new choices replace them
-            MenuSchedule.query.filter_by(date=target_date).delete()
-
-            # For each meal, see if a menu was chosen
+            chosen = {}
             for meal in ["Breakfast", "Lunch", "Dinner"]:
                 menu_id_str = request.form.get(f"{meal}_menu")
                 if not menu_id_str:
                     continue
-
                 try:
                     menu_id = int(menu_id_str)
                 except ValueError:
                     continue
+                chosen[meal] = menu_id
 
-                ms = MenuSchedule(
-                    date=target_date,
-                    meal_type=meal,
-                    menu_id=menu_id,
-                    notes=notes,
-                )
-                db.session.add(ms)
+            if not chosen:
+                errors.append("Select at least one menu before saving.")
 
-            db.session.commit()
-            flash("Menu schedule saved.", "success")
-            return redirect(url_for("menu_scheduler", date=target_date.isoformat()))
+            # Build inventory usage map
+            totals = {}
+            menu_cache = {}
+            if not errors:
+                for meal, menu_id in chosen.items():
+                    menu = Menu.query.get(menu_id)
+                    if not menu:
+                        errors.append(f"Selected menu for {meal} was not found.")
+                        continue
+                    menu_cache[meal] = menu
+                    ingredients = MenuIngredient.query.filter_by(menu_id=menu.id).all()
+                    for ing in ingredients:
+                        base_qty = _to_float(getattr(ing, "quantity", 0.0), 0.0)
+                        form_key = f"{meal}_qty_{ing.id}"
+                        if form_key in request.form:
+                            qty = _to_float(request.form.get(form_key), base_qty)
+                        else:
+                            qty = base_qty
+                        if qty <= 0:
+                            continue
+                        inv_id = getattr(ing, "inventory_id", None)
+                        if not inv_id:
+                            continue
+                        totals[inv_id] = totals.get(inv_id, 0.0) + qty
 
-        # 2) GET: show the scheduler for a specific date (or today)
+            insufficient = []
+            inv_map = {}
+            if not errors and totals:
+                inv_items = InventoryItem.query.filter(
+                    InventoryItem.id.in_(totals.keys())
+                ).all()
+                inv_map = {i.id: i for i in inv_items}
+                for inv_id, needed in totals.items():
+                    inv = inv_map.get(inv_id)
+                    available = _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    if inv is None or needed > available:
+                        name = inv.name if inv else f"Item {inv_id}"
+                        unit = getattr(inv, "unit", "") or ""
+                        insufficient.append((name, needed, available, unit))
+
+                if insufficient:
+                    errors.append(
+                        "Cannot save schedule: some ingredients do not have enough stock in Inventory."
+                    )
+
+            if insufficient:
+                for name, needed, have, unit in insufficient:
+                    flash(
+                        f"{name}: need {needed:g} {unit or ''}, but only {have:g} available.",
+                        "error",
+                    )
+
+            if not errors:
+                # ✅ Deduct inventory
+                for inv_id, needed in totals.items():
+                    inv = inv_map.get(inv_id)
+                    if not inv:
+                        continue
+                    inv.quantity = _to_float(inv.quantity, 0.0) - needed
+
+                # Replace existing schedules for that date
+                MenuSchedule.query.filter_by(date=target_date).delete()
+                for meal, menu_id in chosen.items():
+                    ms = MenuSchedule(
+                        date=target_date,
+                        meal_type=meal,
+                        menu_id=menu_id,
+                        notes=notes,
+                    )
+                    db.session.add(ms)
+
+                db.session.commit()
+                flash("Menu schedule saved and inventory deducted.", "success")
+                return redirect(url_for("menu_scheduler", date=target_date.isoformat()))
+
+        # GET or POST with errors: show scheduler
         date_str = request.args.get("date") or ""
         target_date = _parse_date(date_str) or date.today()
         date_value = target_date.isoformat()
 
-        # Load all menus and bucket them by meal type
         menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         menus_by_meal = {"Breakfast": [], "Lunch": [], "Dinner": []}
         for m in menus:
             menus_by_meal.setdefault(m.meal_type, []).append(m)
 
-        # Existing schedules already saved for that day
         existing = (
             MenuSchedule.query.filter_by(date=target_date)
             .order_by(MenuSchedule.meal_type.asc())
@@ -932,7 +1009,7 @@ def create_app():
             existing=existing,
         )
 
-    # --- WEEKLY PLANNED MENUS (read-only views) ---
+    # ---------------- WEEKLY PLANNED MENUS (READ-ONLY) ----------------
 
     @app.route("/menu/planned")
     @login_required
@@ -990,6 +1067,8 @@ def create_app():
         return render_template("planned_menu_view.html")
 
 
+
+    
     # ---------- health ----------
     @app.route("/healthz")
     def healthz():
