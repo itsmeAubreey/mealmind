@@ -16,7 +16,18 @@
     <option value="low" {% if show == 'low' %}selected{% endif %}>Low / Out of stock</option>
   </select>
   <button type="submit">Filter</button>
+
   <a href="{{ url_for('inventory_new') }}" class="link-new">+ New Item</a>
+
+  {# Export button: respects search + current filter #}
+  <a
+    href="{{ url_for('inventory_export',
+                     q=q,
+                     status='low' if show == 'low' else 'all') }}"
+    class="btn-export"
+  >
+    Export CSV
+  </a>
 </form>
 
 <table class="inventory-table">
@@ -72,6 +83,10 @@
 <style>
   .inventory-filters {
     margin: 8px 0 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
   }
   .inventory-filters input[type="text"] {
     padding: 4px 6px;
@@ -79,14 +94,19 @@
   }
   .inventory-filters select {
     padding: 4px 6px;
-    margin-left: 4px;
   }
   .inventory-filters button {
     padding: 4px 10px;
-    margin-left: 4px;
   }
   .inventory-filters .link-new {
-    margin-left: 10px;
+    margin-left: 8px;
+  }
+  .inventory-filters .btn-export {
+    margin-left: auto;
+    padding: 4px 10px;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    text-decoration: none;
   }
 
   .inventory-table {
