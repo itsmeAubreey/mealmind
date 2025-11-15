@@ -1021,15 +1021,25 @@ def create_app():
     @app.route("/menu/planned/week")
     @login_required
     def planned_menu_week():
+        """
+        Weekly read-only view of planned menus.
+
+        Builds a structure:
+        grouped[date][meal_type] = [menu_title, menu_title, ...]
+        so the template can simply print the titles instead of dealing
+        with ORM relationships.
+        """
         base_str = request.args.get("base")
         if base_str:
             monday = _parse_date(base_str)
         else:
             today = date.today()
             monday = today - timedelta(days=today.weekday())
+
         week_start = monday
         week_end = week_start + timedelta(days=6)
 
+        # All schedules in this week
         schedules = (
             MenuSchedule.query.filter(
                 MenuSchedule.date >= week_start, MenuSchedule.date <= week_end
@@ -1037,11 +1047,30 @@ def create_app():
             .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
             .all()
         )
+
+        # Look up all menu titles in one go
+        menu_ids = {
+            getattr(s, "menu_id", None)
+            for s in schedules
+            if getattr(s, "menu_id", None) is not None
+        }
+        menus = Menu.query.filter(Menu.id.in_(menu_ids)).all() if menu_ids else []
+        menu_map = {m.id: m.title for m in menus}
+
+        # grouped[date][meal_type] = [ "sample1", "sample2", ... ]
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
-            day_bucket.setdefault(s.meal_type, []).append(s)
+            meal_bucket = day_bucket.setdefault(s.meal_type, [])
 
+            mid = getattr(s, "menu_id", None)
+            title = menu_map.get(mid) if mid is not None else ""
+            if not title:
+                title = f"Menu #{mid}" if mid is not None else "(Unknown menu)"
+
+            meal_bucket.append(title)
+
+        # 7 days starting Monday
         days = [{"date": week_start + timedelta(days=i)} for i in range(7)]
 
         prev_url = url_for(
@@ -1060,6 +1089,8 @@ def create_app():
             prev_url=prev_url,
             next_url=next_url,
         )
+
+   
 
     @app.route("/menu/planned/view")
     @login_required
