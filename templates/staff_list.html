@@ -1,81 +1,130 @@
 {% extends "base.html" %}
 {% block title %}Staff{% endblock %}
-{% block content %}
 
+{% block content %}
 <h1>Staff</h1>
 
-<form method="get" class="mb-4 d-flex align-items-center flex-wrap" style="gap:.75rem;">
+<form method="get"
+      action="{{ url_for('staff_list') }}"
+      class="staff-filters">
   <input
-    class="form-control"
-    style="max-width:380px"
     type="text"
     name="q"
-    placeholder="Search by first, last, username, email, or ID"
-    value="{{ q or '' }}"
-  >
-
-  <label class="ms-2 me-1 mb-0">Filter by role</label>
-  <select class="form-select" name="role" style="max-width:180px;">
-    <option value="all" {{ 'selected' if (role_filter=='all') else '' }}>All roles</option>
+    value="{{ q }}"
+    placeholder="Search by first, last, username, ID, or email"
+  />
+  <label for="role-select">Filter by role</label>
+  <select id="role-select" name="role">
+    <option value="all" {% if role_filter == 'all' %}selected{% endif %}>All roles</option>
     {% for r in roles %}
-      <option value="{{ r }}" {{ 'selected' if (role_filter==r) else '' }}>{{ r }}</option>
+      <option value="{{ r }}" {% if role_filter == r %}selected{% endif %}>
+        {{ r }}
+      </option>
     {% endfor %}
   </select>
 
-  <button class="btn btn-primary ms-2" type="submit">Filter</button>
-  <a class="btn btn-secondary" href="{{ url_for('staff_list') }}">Clear</a>
+  <button type="submit">Filter</button>
+  <a href="{{ url_for('staff_list') }}" class="link-clear">Clear</a>
+
+  <a href="{{ url_for('staff_new') }}" class="link-new">+ New Staff</a>
 </form>
 
-<table class="table table-striped align-middle">
-  <thead class="table-light">
+<table class="staff-table">
+  <thead>
     <tr>
       <th>First Name</th>
       <th>Last Name</th>
       <th>Employee ID</th>
       <th>Email</th>
       <th>Role</th>
-      <th style="width:210px;">Actions</th>
+      <th>Actions</th>
     </tr>
   </thead>
   <tbody>
-  {% if users and users|length %}
     {% for u in users %}
-      <tr>
-        <td>{{ u.first_name or '—' }}</td>
-        <td>{{ u.last_name or '—' }}</td>
-        <td>{{ u.employee_id or '—' }}</td>
-        <td>{{ u.email or '—' }}</td>
-        <td>{{ u.role or '—' }}</td>
-        <td>
-          <div class="btn-pair">
-            <a class="btn btn-primary btn-action" href="{{ url_for('staff_edit', uid=u.id) }}">Edit</a>
-            <form method="post"
-                  action="{{ url_for('staff_delete', uid=u.id) }}"
-                  onsubmit="return confirm('Delete this staff member?');">
-              <button class="btn btn-danger btn-action" type="submit">Delete</button>
-            </form>
-          </div>
-        </td>
-      </tr>
+    <tr>
+      <td>{{ u.first_name }}</td>
+      <td>{{ u.last_name }}</td>
+      <td>{{ u.employee_id }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.role }}</td>
+      <td class="staff-actions">
+        <a href="{{ url_for('staff_edit', uid=u.id) }}">Edit</a>
+
+        <form method="post"
+              action="{{ url_for('staff_delete', uid=u.id) }}"
+              style="display:inline;"
+              onsubmit="return confirm('Delete staff {{ u.first_name }} {{ u.last_name }}?');">
+          <button type="submit" class="btn-delete">Delete</button>
+        </form>
+      </td>
+    </tr>
     {% endfor %}
-  {% else %}
-    <tr><td colspan="6" class="text-muted">No staff yet.</td></tr>
-  {% endif %}
   </tbody>
 </table>
 
-<div class="d-flex flex-wrap" style="gap:.75rem;">
-  <a class="btn btn-primary" href="{{ url_for('staff_new') }}">+ New Staff</a>
-  <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
-</div>
+<p style="margin-top: 12px;">
+  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</p>
 
 <style>
-  .btn-pair {
-    display: inline-flex;
-    gap: .5rem;
+  /* Filters row – match Inventory/Residents look */
+  .staff-filters {
+    margin: 8px 0 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
   }
-  .btn-action {
-    min-width: 96px;   /* same width for Edit/Delete */
+  .staff-filters input[type="text"] {
+    padding: 4px 6px;
+    min-width: 260px;
+  }
+  .staff-filters select {
+    padding: 4px 6px;
+  }
+  .staff-filters button {
+    padding: 4px 10px;
+  }
+  .staff-filters .link-clear {
+    margin-left: 4px;
+  }
+  .staff-filters .link-new {
+    margin-left: auto;
+    text-decoration: underline;
+  }
+
+  /* Table – copy the Inventory layout style */
+  .staff-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .staff-table th,
+  .staff-table td {
+    border: 1px solid #d4d4d4;
+    padding: 6px 8px;
+    text-align: left;
+  }
+  .staff-table thead th {
+    background-color: #f3f4f6;
+    font-weight: 600;
+  }
+  .staff-actions {
+    white-space: nowrap;
+  }
+
+  /* Red delete button */
+  .btn-delete {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: none;
+    background: #ef4444;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .btn-delete:hover {
+    background: #b91c1c;
   }
 </style>
 {% endblock %}
