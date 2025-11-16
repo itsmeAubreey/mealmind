@@ -112,12 +112,17 @@
   </div>
 </form>
 
-{% if resident %}
-  <form action="{{ url_for('residents_delete', rid=resident.id) }}" method="post"
-        onsubmit="return confirm('Delete this resident?');" style="margin-top:12px;">
-    <button class="btn btn-danger" type="submit">Delete</button>
-  </form>
+{% if mode == 'edit' %}
+<form method="post"
+      action="{{ url_for('residents_delete', rid=rid) }}"
+      onsubmit="return confirm('Are you sure you want to delete this resident? This cannot be undone.');"
+      style="margin-top: 12px;">
+  <button type="submit" class="btn-danger">
+    Delete Resident
+  </button>
+</form>
 {% endif %}
+
 
 <p style="margin-top:14px;">
   ← <a href="{{ url_for('residents_list') }}">Back to Residents</a> |
