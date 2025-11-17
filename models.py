@@ -62,7 +62,7 @@ class Resident(db.Model):
     last_name = db.Column(db.String(120), nullable=False)
 
     birthday = db.Column(db.Date)
-    # some of your earlier versions stored age as a column
+    # legacy column; we don't rely on this anymore for display
     age = db.Column(db.Integer)
 
     diet = db.Column(db.String(200))
@@ -75,15 +75,27 @@ class Resident(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def calc_age(self):
+        """Return age in whole years based on birthday, or None if no birthday."""
         if not self.birthday:
             return None
         today = date.today()
-        return today.year - self.birthday.year - (
-            (today.month, today.day) < (self.birthday.month, self.birthday.day)
-        )
+        years = today.year - self.birthday.year
+        # subtract 1 if birthday has not happened yet this year
+        if (today.month, today.day) < (self.birthday.month, self.birthday.day):
+            years -= 1
+        return years
+
+    @property
+    def age_years(self):
+        """
+        Computed age property used by the UI.
+        Always calculated from birthday so it stays up to date.
+        """
+        return self.calc_age()
 
     def __repr__(self):
         return f"<Resident {self.last_name}, {self.first_name}>"
+
 
 
 class InventoryItem(db.Model):
