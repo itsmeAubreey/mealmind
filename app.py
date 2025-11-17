@@ -7,6 +7,7 @@ from functools import wraps
 from flask import (
     Flask,
     render_template,
+    current_app,
     request,
     redirect,
     url_for,
@@ -63,6 +64,24 @@ def _canonical_item_name(name: str) -> str:
         base = base[:-1]
     return base
     
+def _try_entra_login():
+    from models import User
+    if not current_app.config.get("USE_ENTRA_ID"):
+        return
+
+    principal_name = request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME")
+    if not principal_name or session.get("user_id"):
+        return
+
+    user = User.query.filter_by(email=principal_name).first()
+    if not user:
+        return
+
+    session["user_id"] = user.id
+    session["role"] = user.role
+    session["username"] = user.username
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -76,6 +95,7 @@ def login_required(view):
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-key")
+    app.config["USE_ENTRA_ID"] = os.getenv("USE_ENTRA_ID", "0") == "1"
 
     # ---------- DB CONFIG (do this BEFORE db.init_app) ----------
     db_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
@@ -125,6 +145,10 @@ def create_app():
         u = session.get("user")
         return {"age": age_from_date, "current_user": u, "user": u}
 
+    @app.before_request
+    def sync_entra_user():
+        _try_entra_login()
+        
     # ---------------- optional Azure OpenAI chat ----------------
     @app.route("/chat", methods=["POST"])
     @login_required
