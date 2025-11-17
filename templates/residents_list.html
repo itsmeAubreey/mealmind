@@ -41,7 +41,14 @@
       <tr>
         <td>{{ r.first_name }}</td>
         <td>{{ r.last_name }}</td>
-        <td>{{ r.age }}</td>
+        <td>
+        {% if r.age_years is not none %}
+          {{ r.age_years }}
+        {% else %}
+          &mdash;
+        {% endif %}
+      </td>
+
         <td>
           {% if r.birthday %}
             {{ r.birthday.strftime('%Y-%m-%d') }}
