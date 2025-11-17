@@ -538,7 +538,7 @@ def create_app():
     @app.route("/inventory/new", methods=["GET", "POST"])
     @login_required
     def inventory_new():
-        units = ["pcs", "kg", "g", "L", "mL", "pack"]
+        units = ["pcs", "kg", "g", "L", "mL", "pack", "bags", "cases", "dozen", "cans", "jugs", "bunches", "heads", "loaves", "bottles", "jars", "boxes",]
         errors = []
         values = {}
 
@@ -600,7 +600,7 @@ def create_app():
     @login_required
     def inventory_edit(iid):
         it = InventoryItem.query.get_or_404(iid)
-        units = ["pcs", "kg", "g", "L", "mL", "pack"]
+        units = ["pcs", "kg", "g", "L", "mL", "pack", "bags", "cases", "dozen", "cans", "jugs", "bunches", "heads", "loaves", "bottles", "jars", "boxes"]
         if request.method == "POST":
             it.name = request.form.get("name") or it.name
             it.unit = request.form.get("unit") or it.unit
