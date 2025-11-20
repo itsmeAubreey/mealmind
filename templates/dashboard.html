@@ -1,77 +1,263 @@
 {% extends "base.html" %}
+
 {% block content %}
-  <div style="background:#fff;border-radius:1rem;padding:1rem 1.2rem;margin-bottom:1.2rem;">
-    <h2 style="margin:0;">Welcome, {{ user.first_name or user.username }}</h2>
-    <p style="margin:0.25rem 0 0;color:#475569;">Role: {{ user.role }}</p>
-  </div>
+<div class="dashboard-page">
 
-  <div style="display:flex;gap:1.25rem;flex-wrap:wrap;">
-    <a href="{{ url_for('residents_list') }}" class="tile tile-purple">
-      <div class="icon">👥</div>
-      <div class="title">Residents</div>
-      <div class="desc">View, add, and update resident records.</div>
-    </a>
-    <a href="{{ url_for('inventory_list') }}" class="tile tile-green">
-      <div class="icon">📦</div>
-      <div class="title">Inventory</div>
-      <div class="desc">Manage stocks, units, and low items.</div>
-    </a>
-    <a href="{{ url_for('menu_hub') }}" class="tile tile-blue">
-      <div class="icon">🍽</div>
-      <div class="title">Menu</div>
-      <div class="desc">Plan meals, schedule, and view weekly plan.</div>
-    </a>
-    {% if user.role == "Manager" %}
-      <a href="{{ url_for('staff_list') }}" class="tile tile-red">
-        <div class="icon">📊</div>
-        <div class="title">Staff</div>
-        <div class="desc">Add staff, set roles, temp passwords.</div>
-      </a>
-    {% endif %}
-  </div>
+  <!-- soft gradient background shapes -->
+  <div class="dashboard-bg-shape dashboard-bg-shape--1"></div>
+  <div class="dashboard-bg-shape dashboard-bg-shape--2"></div>
 
-  <style>
-    .tile {
-      flex: 1 1 220px;
-      min-height: 140px;
-      border-radius: 1.1rem;
-      padding: 1.1rem 1rem 1rem;
-      color: #fff;
-      text-decoration: none;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 10px 25px rgba(15,23,42,.12);
-      transition: transform .15s ease-out, box-shadow .15s ease-out;
+  <div class="dashboard-inner">
+
+    <!-- HERO / WELCOME CARD -->
+    <section class="dashboard-hero">
+      <div class="dashboard-hero-main">
+        <p class="hero-kicker">Welcome back</p>
+        <h1 class="hero-title">
+          Hello, {{ user.first_name or user.username }}
+        </h1>
+        <p class="hero-role">
+          Role: <span>{{ user.role }}</span>
+        </p>
+        <p class="hero-subtitle">
+          Manage residents, inventory, menus, and staff from a single, simple dashboard.
+        </p>
+      </div>
+      <div class="dashboard-hero-side">
+        <div class="hero-pill">
+          <span class="hero-pill-dot"></span>
+          <span class="hero-pill-text">MealMind • Kitchen management tool</span>
+        </div>
+        <p class="hero-side-text">
+          Today’s focus: keep the kitchen running smoothly and safely for all residents.
+        </p>
+      </div>
+    </section>
+
+    <!-- MAIN CARDS -->
+    <section class="dashboard-cards">
+      <div class="tiles-wrapper">
+        <a href="{{ url_for('residents_list') }}" class="tile tile-purple">
+          <div class="icon">👥</div>
+          <div class="title">Residents</div>
+          <div class="desc">View, add, and update resident records.</div>
+        </a>
+
+        <a href="{{ url_for('inventory_list') }}" class="tile tile-green">
+          <div class="icon">📦</div>
+          <div class="title">Inventory</div>
+          <div class="desc">Manage stocks, units, and low items.</div>
+        </a>
+
+        <a href="{{ url_for('menu_hub') }}" class="tile tile-blue">
+          <div class="icon">🍽</div>
+          <div class="title">Menu</div>
+          <div class="desc">Plan meals, schedule, and view weekly plan.</div>
+        </a>
+
+        {% if user.role == "Manager" %}
+        <a href="{{ url_for('staff_list') }}" class="tile tile-red">
+          <div class="icon">📊</div>
+          <div class="title">Staff</div>
+          <div class="desc">Add staff, set roles, temp passwords.</div>
+        </a>
+        {% endif %}
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<style>
+  /* PAGE WRAPPER */
+  .dashboard-page {
+    position: relative;
+    min-height: calc(100vh - 64px);
+    padding: 2.5rem 2.5rem 3rem;
+    background: radial-gradient(circle at top left, #eef2ff 0, #f9fafb 40%, #ecfdf5 80%);
+    overflow: hidden;
+  }
+
+  /* subtle blurred blobs in the background */
+  .dashboard-bg-shape {
+    position: absolute;
+    filter: blur(48px);
+    opacity: 0.65;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .dashboard-bg-shape--1 {
+    width: 320px;
+    height: 320px;
+    top: -80px;
+    right: -60px;
+    background: linear-gradient(135deg, #38bdf8, #a855f7);
+  }
+  .dashboard-bg-shape--2 {
+    width: 260px;
+    height: 260px;
+    bottom: -60px;
+    left: -40px;
+    background: linear-gradient(135deg, #22c55e, #f97316);
+  }
+
+  .dashboard-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* HERO CARD */
+  .dashboard-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+    padding: 1.75rem 2rem;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
+    margin-bottom: 1.75rem;
+    backdrop-filter: blur(12px);
+  }
+
+  .dashboard-hero-main {
+    flex: 2;
+  }
+  .dashboard-hero-side {
+    flex: 1.2;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .hero-kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6366f1;
+    margin: 0 0 0.25rem;
+  }
+
+  .hero-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 0.35rem;
+    color: #111827;
+  }
+
+  .hero-role {
+    font-size: 0.95rem;
+    color: #6b7280;
+    margin: 0 0 0.5rem;
+  }
+  .hero-role span {
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .hero-subtitle {
+    margin: 0;
+    color: #4b5563;
+    font-size: 0.95rem;
+  }
+
+  .hero-pill {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #4f46e5, #06b6d4);
+    color: #f9fafb;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+  .hero-pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #bbf7d0;
+  }
+  .hero-pill-text {
+    white-space: nowrap;
+  }
+
+  .hero-side-text {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #6b7280;
+  }
+
+  /* CARDS WRAPPER */
+  .dashboard-cards {
+    margin-top: 0.75rem;
+  }
+
+  .tiles-wrapper {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  /* TILES (kept from your original design, slightly tweaked) */
+  .tile {
+    flex: 1 1 220px;
+    min-height: 140px;
+    border-radius: 1.1rem;
+    padding: 1.1rem 1rem 1rem;
+    color: #fff;
+    text-decoration: none;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+  }
+  .tile .icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+  .tile .title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+  }
+  .tile .desc {
+    font-size: 0.72rem;
+    max-width: 220px;
+    line-height: 1.4;
+  }
+  .tile:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
+  }
+  .tile-purple {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 60%, #c4b5fd 100%);
+  }
+  .tile-green {
+    background: linear-gradient(135deg, #14b8a6 0%, #10b981 60%, #6ee7b7 100%);
+  }
+  .tile-blue {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #93c5fd 100%);
+  }
+  .tile-red {
+    background: linear-gradient(135deg, #ef4444 0%, #f97316 60%, #fdba74 100%);
+  }
+
+  /* MOBILE */
+  @media (max-width: 900px) {
+    .dashboard-page {
+      padding: 1.5rem 1.25rem 2.25rem;
     }
-    .tile .icon {
-      font-size: 1.5rem;
-      margin-bottom: .25rem;
+    .dashboard-hero {
+      flex-direction: column;
     }
-    .tile .title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      margin-bottom: .2rem;
+    .dashboard-hero-side {
+      align-items: flex-start;
     }
-    .tile .desc {
-      font-size: .72rem;
-      max-width: 220px;
-      line-height: 1.4;
-    }
-    .tile:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 14px 30px rgba(15,23,42,.18);
-    }
-    .tile-purple {
-      background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 60%, #c4b5fd 100%);
-    }
-    .tile-green {
-      background: linear-gradient(135deg, #14b8a6 0%, #10b981 60%, #6ee7b7 100%);
-    }
-    .tile-blue {
-      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #93c5fd 100%);
-    }
-    .tile-red {
-      background: linear-gradient(135deg, #ef4444 0%, #f97316 60%, #fdba74 100%);
-    }
-  </style>
+  }
+</style>
 {% endblock %}
