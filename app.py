@@ -271,15 +271,10 @@ def create_app():
         return render_template("dashboard.html")
 
     # ---------- RESIDENTS ----------
-    @app.route("/residents")
+   @app.route("/residents")
     @login_required
     def residents_list():
-        # search text
         q = request.args.get("q", "").strip()
-        # current page (default 1)
-        page = request.args.get("page", 1, type=int)
-        per_page = 10  # adjust if you want more/less rows per page
-    
         query = Resident.query
     
         if q:
@@ -293,13 +288,10 @@ def create_app():
                 )
             )
     
-        # use paginate instead of .all()
-        residents = (
-            query.order_by(Resident.last_name, Resident.first_name)
-                 .paginate(page=page, per_page=per_page, error_out=False)
-        )
+        residents = query.order_by(Resident.last_name, Resident.first_name).all()
     
         return render_template("residents_list.html", residents=residents)
+
 
 
     @app.route("/residents/new", methods=["GET", "POST"])
