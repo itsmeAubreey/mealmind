@@ -270,29 +270,27 @@ def create_app():
     def dashboard():
         return render_template("dashboard.html")
 
-    # ---------- RESIDENTS ----------
-   @app.route("/residents")
+       # ---------- RESIDENTS ----------
+    @app.route("/residents")
     @login_required
     def residents_list():
-        q = request.args.get("q", "").strip()
+        """List residents with simple text search (no pagination)."""
+        q = (request.args.get("q") or "").strip()
         query = Resident.query
-    
+
         if q:
             like = f"%{q}%"
             query = query.filter(
-                db.or_(
+                or_(
                     Resident.first_name.ilike(like),
                     Resident.last_name.ilike(like),
                     Resident.diet.ilike(like),
                     Resident.allergies.ilike(like),
                 )
             )
-    
+
         residents = query.order_by(Resident.last_name, Resident.first_name).all()
-    
-        return render_template("residents_list.html", residents=residents)
-
-
+        return render_template("residents_list.html", residents=residents, q=q)
 
     @app.route("/residents/new", methods=["GET", "POST"])
     @login_required
@@ -324,6 +322,7 @@ def create_app():
     @login_required
     def residents_edit(rid):
         r = Resident.query.get_or_404(rid)
+
         if request.method == "POST":
             r.first_name = request.form.get("first_name") or ""
             r.last_name = request.form.get("last_name") or ""
@@ -337,7 +336,6 @@ def create_app():
             db.session.commit()
             return redirect(url_for("residents_list"))
 
-        # pass what the template expects
         return render_template(
             "residents_form.html",
             mode="edit",
@@ -358,11 +356,10 @@ def create_app():
     def resident_print(rid):
         r = Resident.query.get_or_404(rid)
         auto = request.args.get("auto")
-        # template was using "r", but route was only sending "resident"
         return render_template(
             "resident_print.html",
             resident=r,
-            r=r,           # <-- add this so {{ r... }} in template works
+            r=r,       # template uses {{ r... }}
             auto=auto,
         )
 
