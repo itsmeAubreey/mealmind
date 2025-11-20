@@ -17,14 +17,13 @@
   </div>
 </div>
 
-
 <table class="planned-table">
   <thead>
     <tr>
       <th class="meal-col">Meal</th>
-      {# 7 generic day columns, like your original layout #}
-      {% for _ in days %}
-        <th></th>
+      {# show actual day names instead of blank headers #}
+      {% for day in days %}
+        <th>{{ day.date.strftime('%A') }}</th>
       {% endfor %}
     </tr>
   </thead>
@@ -81,7 +80,6 @@
   .planned-table tbody tr:nth-child(odd) td {
     background-color: #f9fafb;
   }
-   /* 👇 new bit */
   .week-nav {
     display: flex;
     justify-content: space-between;
