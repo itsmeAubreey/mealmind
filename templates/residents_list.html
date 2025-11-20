@@ -4,24 +4,23 @@
 {% block content %}
 <h1>Residents</h1>
 
-<form method="get"
-      action="{{ url_for('residents_list') }}"
-      class="residents-filters">
+<form method="get" class="resident-filter-bar">
   <input
     type="text"
     name="q"
     value="{{ request.args.get('q', '') }}"
     placeholder="Search by name, diet, allergy..."
   />
-  <button type="submit">Filter</button>
-  <a href="{{ url_for('residents_list') }}" class="link-clear">Clear</a>
+  <button type="submit" class="btn-filter">Filter</button>
 
-  <a href="{{ url_for('residents_new') }}" class="link-new">
-    + New Resident
-  </a>
+  {% if request.args.get('q') %}
+    <a href="{{ url_for('residents_list') }}" class="link-clear">Clear</a>
+  {% endif %}
+
+  <a href="{{ url_for('resident_new') }}" class="link-new">+ New Resident</a>
 </form>
 
-<table class="residents-table">
+<table class="resident-table">
   <thead>
     <tr>
       <th>First Name</th>
@@ -37,104 +36,206 @@
     </tr>
   </thead>
   <tbody>
-    {% for r in residents %}
+    {% if residents.items %}
+      {% for r in residents.items %}
+        <tr>
+          <td>{{ r.first_name }}</td>
+          <td>{{ r.last_name }}</td>
+          <td>{{ r.age }}</td>
+          <td>{{ r.birthday.strftime("%Y-%m-%d") if r.birthday }}</td>
+          <td>{{ r.medications or "" }}</td>
+          <td>{{ r.illnesses or "" }}</td>
+          <td>{{ r.allergies or "" }}</td>
+          <td>{{ r.fluids or "" }}</td>
+          <td>{{ r.diet or "" }}</td>
+          <td class="actions">
+            <a href="{{ url_for('resident_edit', resident_id=r.id) }}">Edit</a>
+            {% if r.id %}
+              <a
+                href="{{ url_for('resident_print', resident_id=r.id) }}"
+                title="Print resident card"
+              >🖨</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    {% else %}
       <tr>
-        <td>{{ r.first_name }}</td>
-        <td>{{ r.last_name }}</td>
-        <td>
-        {% if r.age_years is not none %}
-          {{ r.age_years }}
-        {% else %}
-          &mdash;
-        {% endif %}
-      </td>
-
-        <td>
-          {% if r.birthday %}
-            {{ r.birthday.strftime('%Y-%m-%d') }}
-          {% endif %}
-        </td>
-        <td>{{ r.medications }}</td>
-        <td>{{ r.illnesses }}</td>
-        <td>{{ r.allergies }}</td>
-        <td>{{ r.fluids }}</td>
-        <td>{{ r.diet }}</td>
-        <td class="residents-actions">
-          <a href="{{ url_for('residents_edit', rid=r.id) }}">Edit</a>
-          <a href="{{ url_for('resident_print', rid=r.id, auto=1) }}"
-             class="btn-print"
-             title="Print resident card">
-            🖨
-          </a>
+        <td colspan="10" style="text-align:center; padding:12px;">
+          No residents found.
         </td>
       </tr>
-    {% endfor %}
+    {% endif %}
   </tbody>
 </table>
 
-<p style="margin-top: 12px;">
-  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-</p>
+{# PAGINATION #}
+{% if residents.pages > 1 %}
+<nav class="pager">
+  <ul>
+    {% if residents.has_prev %}
+      <li>
+        <a href="{{ url_for('residents_list',
+                            page=residents.prev_num,
+                            q=request.args.get('q','')) }}">
+          &laquo; Prev
+        </a>
+      </li>
+    {% endif %}
+
+    <li class="current">
+      Page {{ residents.page }} of {{ residents.pages }}
+    </li>
+
+    {% if residents.has_next %}
+      <li>
+        <a href="{{ url_for('residents_list',
+                            page=residents.next_num,
+                            q=request.args.get('q','')) }}">
+          Next &raquo;
+        </a>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+{# BACK BUTTON #}
+<div class="back-wrapper">
+  <a href="{{ url_for('dashboard') }}" class="back-btn">
+    &larr; Back to Dashboard
+  </a>
+</div>
 
 <style>
-  .residents-filters {
-    margin: 8px 0 12px;
+  .resident-filter-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 0.5rem;
     align-items: center;
-  }
-  .residents-filters input[type="text"] {
-    padding: 4px 6px;
-    width: 260px;
-  }
-  .residents-filters button {
-    padding: 4px 10px;
-  }
-  .residents-filters .link-clear {
-    margin-left: 4px;
-  }
-  .residents-filters .link-new {
-    margin-left: 8px;
+    margin-bottom: 0.75rem;
   }
 
-  .residents-table {
+  .resident-filter-bar input[type="text"] {
+    flex: 1 1 220px;
+    max-width: 360px;
+    padding: 0.4rem 0.5rem;
+    border-radius: 0.35rem;
+    border: 1px solid #cbd5f5;
+    font-size: 0.9rem;
+  }
+
+  .btn-filter {
+    padding: 0.4rem 0.85rem;
+    border-radius: 0.4rem;
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .btn-filter:hover {
+    background: #1d4ed8;
+  }
+
+  .link-clear,
+  .link-new {
+    font-size: 0.9rem;
+    text-decoration: underline;
+    color: #4c1d95;
+  }
+
+  .link-new {
+    margin-left: auto;
+    font-weight: 600;
+  }
+
+  .resident-table {
     width: 100%;
     border-collapse: collapse;
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
   }
-  .residents-table th,
-  .residents-table td {
+
+  .resident-table th,
+  .resident-table td {
     border: 1px solid #d4d4d4;
     padding: 6px 8px;
     text-align: left;
-  }
-  .residents-table thead th {
-    background-color: #f3f4f6;
-    font-weight: 600;
-  }
-  .residents-table tbody tr:nth-child(odd) td {
-    background-color: #f9fafb;
+    vertical-align: top;
   }
 
-  .residents-actions {
+  .resident-table th {
+    background: #f3f4f6;
+  }
+
+  .resident-table tbody tr:nth-child(odd) td {
+    background: #f9fafb;
+  }
+
+  .resident-table td.actions {
     white-space: nowrap;
   }
-  .btn-print {
+
+  .resident-table td.actions a {
+    margin-right: 0.35rem;
+  }
+
+  .pager {
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .pager ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.84rem;
+    align-items: center;
+  }
+
+  .pager a {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid #cbd5f5;
+    text-decoration: none;
+    color: #1d4ed8;
+    background: #ffffff;
+  }
+
+  .pager a:hover {
+    background: #eff6ff;
+  }
+
+  .pager .current {
+    padding: 0.25rem 0.6rem;
+    color: #4b5563;
+  }
+
+  .back-wrapper {
+    margin-top: 12px;
+  }
+
+  .back-btn {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    margin-left: 6px;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: #2563eb;
-    color: #ffffff;
+    gap: 0.25rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    background: #e5e7eb;
+    color: #111827;
     text-decoration: none;
-    font-size: 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
   }
-  .btn-print:hover {
-    background: #1d4ed8;
+
+  .back-btn:hover {
+    background: #d1d5db;
   }
 </style>
 {% endblock %}
