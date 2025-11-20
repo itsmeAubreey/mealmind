@@ -17,6 +17,7 @@
     <a href="{{ url_for('residents_list') }}" class="link-clear">Clear</a>
   {% endif %}
 
+  <!-- New resident button -->
   <a href="{{ url_for('residents_new') }}" class="link-new">+ New Resident</a>
 </form>
 
@@ -41,7 +42,7 @@
         <tr>
           <td>{{ r.first_name }}</td>
           <td>{{ r.last_name }}</td>
-          <td>{{ r.age }}</td>
+          <td>{{ age(r.birthday) }}</td>
           <td>{{ r.birthday.strftime("%Y-%m-%d") if r.birthday }}</td>
           <td>{{ r.medications or "" }}</td>
           <td>{{ r.illnesses or "" }}</td>
