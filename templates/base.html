@@ -6,52 +6,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/mm2.png') }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
+
   <style>
-    body {
-      background: #f3f4f8;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
+    :root {
+      --mm-bg: #f1f5f9;
+      --mm-topbar-bg: #0f172a;
+      --mm-topbar-shadow: 0 2px 14px rgba(15, 23, 42, 0.55);
+      --mm-accent: #2563eb;
+      --mm-accent-warm: #f97316;
+      --mm-radius: 0.5rem;
     }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--mm-bg);
+      color: #111827;
+    }
+
     .topbar {
-      background: #0f172a;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--mm-topbar-bg);
       color: #fff;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.5rem 1.5rem;
+      padding: 0.5rem 1.75rem;
+      box-shadow: var(--mm-topbar-shadow);
     }
+
     .brand {
       display: flex;
       align-items: center;
-      gap: .5rem;
+      gap: 0.6rem;
       text-decoration: none;
       color: #fff;
+      font-weight: 600;
+      letter-spacing: 0.02em;
     }
+
     .brand img {
       height: 34px;
       width: 34px;
+      border-radius: 0.55rem;
     }
+
+    .brand span {
+      font-size: 1.05rem;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+    }
+
     .btn-logout {
-      background: #f97316;
+      background: var(--mm-accent-warm);
       border: none;
-      padding: .45rem 1rem;
-      border-radius: .45rem;
+      padding: 0.45rem 1rem;
+      border-radius: 999px;
       color: #fff;
       font-weight: 600;
       text-decoration: none;
-    }
-    .content {
-      padding: 1.5rem;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(248, 113, 22, 0.45);
+      transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
     }
 
-    /* chat bubble */
+    .btn-logout:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(248, 113, 22, 0.6);
+    }
+
+    main.content {
+      padding: 1.5rem;
+      min-height: calc(100vh - 56px);
+    }
+
+    /* floating chat bubble */
     .chat-bubble {
       position: fixed;
       bottom: 1.2rem;
       right: 1.2rem;
       width: 54px;
       height: 54px;
-      background: #2563eb;
+      background: var(--mm-accent);
       border-radius: 9999px;
       display: flex;
       align-items: center;
@@ -62,68 +109,99 @@
       font-size: 1.6rem;
       z-index: 999;
     }
+
     .chat-panel {
       position: fixed;
       bottom: 5rem;
       right: 1.2rem;
       width: 280px;
       background: #fff;
-      border-radius: .75rem;
+      border-radius: 0.75rem;
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
       display: none;
       flex-direction: column;
       overflow: hidden;
       z-index: 999;
     }
+
     .chat-panel header {
-      background: #2563eb;
+      background: var(--mm-accent);
       color: #fff;
-      padding: .5rem .75rem;
+      padding: 0.5rem 0.75rem;
       font-weight: 600;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      font-size: 0.9rem;
     }
+
     .chat-body {
-      padding: .5rem;
-      max-height: 200px;
+      padding: 0.5rem;
+      max-height: 220px;
       overflow-y: auto;
-      font-size: .85rem;
+      font-size: 0.85rem;
+      background: #f9fafb;
     }
+
     .chat-input {
       display: flex;
-      gap: .25rem;
-      padding: .5rem;
+      gap: 0.25rem;
+      padding: 0.5rem;
       border-top: 1px solid #e2e8f0;
+      background: #fff;
     }
+
     .chat-input input {
       flex: 1;
       border: 1px solid #cbd5f5;
-      border-radius: .35rem;
-      padding: .25rem .4rem;
+      border-radius: 0.35rem;
+      padding: 0.25rem 0.4rem;
+      font-size: 0.85rem;
     }
+
     .chat-input button {
       border: none;
-      background: #2563eb;
+      background: var(--mm-accent);
       color: #fff;
-      border-radius: .35rem;
-      padding: .25rem .6rem;
+      border-radius: 0.35rem;
+      padding: 0.25rem 0.6rem;
       cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .chat-input button:hover {
+      filter: brightness(1.05);
+    }
+
+    @media (max-width: 640px) {
+      .topbar {
+        padding-inline: 1.1rem;
+      }
+      main.content {
+        padding: 1rem;
+      }
+      .chat-panel {
+        right: 0.75rem;
+        width: 260px;
+      }
+      .chat-bubble {
+        right: 0.75rem;
+      }
     }
   </style>
+
   {% block head %}{% endblock %}
 </head>
 <body>
   <header class="topbar">
     <a href="{{ url_for('dashboard') }}" class="brand">
-      <img src="{{ url_for('static', filename='img/mm2.png') }}" alt="MealMind">
+      <img src="{{ url_for('static', filename='img/mm2.png') }}" alt="MealMind logo">
       <span>MealMind</span>
     </a>
     {% if current_user %}
-      <div style="display:flex; gap:1rem; align-items:center;">
-
-
-        
+      <div class="topbar-right">
+        <!-- you can show current user name here if you want -->
+        {# <span>{{ current_user.username }}</span> #}
         <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
       </div>
     {% endif %}
@@ -156,9 +234,13 @@
     const chatMsg    = document.getElementById('chatMsg');
 
     function toggleChat() {
-      chatPanel.style.display = (chatPanel.style.display === 'flex') ? 'none' : 'flex';
-      chatPanel.style.flexDirection = 'column';
+      const isOpen = chatPanel.style.display === 'flex';
+      chatPanel.style.display = isOpen ? 'none' : 'flex';
+      if (!isOpen) {
+        chatPanel.style.flexDirection = 'column';
+      }
     }
+
     chatToggle.addEventListener('click', toggleChat);
 
     async function sendChat() {
@@ -167,6 +249,7 @@
       chatBody.innerHTML += `<div><strong>You:</strong> ${text}</div>`;
       chatMsg.value = '';
       chatBody.scrollTop = chatBody.scrollHeight;
+
       try {
         const res = await fetch('/chat', {
           method: 'POST',
@@ -181,6 +264,7 @@
       chatBody.scrollTop = chatBody.scrollHeight;
     }
   </script>
+
   {% block scripts %}{% endblock %}
 </body>
 </html>
