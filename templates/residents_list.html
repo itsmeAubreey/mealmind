@@ -37,13 +37,17 @@
     </tr>
   </thead>
   <tbody>
-    {% if residents.items %}
-      {% for r in residents.items %}
+    {% if residents %}
+      {% for r in residents %}
         <tr>
           <td>{{ r.first_name }}</td>
           <td>{{ r.last_name }}</td>
           <td>{{ age(r.birthday) }}</td>
-          <td>{{ r.birthday.strftime("%Y-%m-%d") if r.birthday }}</td>
+          <td>
+            {% if r.birthday %}
+              {{ r.birthday.strftime("%Y-%m-%d") }}
+            {% endif %}
+          </td>
           <td>{{ r.medications or "" }}</td>
           <td>{{ r.illnesses or "" }}</td>
           <td>{{ r.allergies or "" }}</td>
@@ -70,38 +74,6 @@
   </tbody>
 </table>
 
-{# PAGINATION #}
-{% if residents.pages > 1 %}
-<nav class="pager">
-  <ul>
-    {% if residents.has_prev %}
-      <li>
-        <a href="{{ url_for('residents_list',
-                            page=residents.prev_num,
-                            q=request.args.get('q','')) }}">
-          &laquo; Prev
-        </a>
-      </li>
-    {% endif %}
-
-    <li class="current">
-      Page {{ residents.page }} of {{ residents.pages }}
-    </li>
-
-    {% if residents.has_next %}
-      <li>
-        <a href="{{ url_for('residents_list',
-                            page=residents.next_num,
-                            q=request.args.get('q','')) }}">
-          Next &raquo;
-        </a>
-      </li>
-    {% endif %}
-  </ul>
-</nav>
-{% endif %}
-
-{# BACK BUTTON #}
 <div class="back-wrapper">
   <a href="{{ url_for('dashboard') }}" class="back-btn">
     &larr; Back to Dashboard
@@ -181,41 +153,6 @@
 
   .resident-table td.actions a {
     margin-right: 0.35rem;
-  }
-
-  .pager {
-    margin-top: 10px;
-    display: flex;
-    justify-content: center;
-  }
-
-  .pager ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    gap: 0.5rem;
-    font-size: 0.84rem;
-    align-items: center;
-  }
-
-  .pager a {
-    display: inline-block;
-    padding: 0.25rem 0.6rem;
-    border-radius: 999px;
-    border: 1px solid #cbd5f5;
-    text-decoration: none;
-    color: #1d4ed8;
-    background: #ffffff;
-  }
-
-  .pager a:hover {
-    background: #eff6ff;
-  }
-
-  .pager .current {
-    padding: 0.25rem 0.6rem;
-    color: #4b5563;
   }
 
   .back-wrapper {
