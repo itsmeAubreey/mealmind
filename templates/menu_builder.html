@@ -10,12 +10,15 @@
   .list { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .list th, .list td { border-bottom: 1px solid var(--line); padding: 10px 8px; }
   .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef2f6; font-weight: 600; }
+
   .ing-row { display: grid; grid-template-columns: 1fr 132px 110px 42px; gap: 8px; align-items: center; margin-bottom: 8px; }
   .qty-wrap { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .qty-wrap button { width: 42px; height: 42px; border: none; background: #eef2f6; font-weight: 700; cursor: pointer; }
   .qty-wrap input { width: 100%; text-align: center; border: none; height: 42px; }
+
   .btn-danger { background: #ef4444; color: #fff; border: none; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+
   .flash.error { background: #fee2e2; border: 1px solid #fecaca; color: #7f1d1d; padding: 10px; border-radius: 8px; }
   .flash.info { background: #e0ecff; border: 1px solid #bfdbfe; color: #1e3a8a; padding: 10px; border-radius: 8px; }
 
@@ -79,11 +82,18 @@
 
       <div class="actions">
         <button class="btn btn-primary" type="submit">{{ 'Save Changes' if editing else 'Save Menu' }}</button>
+
         {% if editing %}
-          <a class="btn btn-secondary" href="{{ url_for('menu_builder') }}">Cancel</a>
+          <a class="btn btn-secondary" role="button" href="{{ url_for('menu_builder') }}">Cancel</a>
         {% else %}
-          <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
+          <a class="btn btn-secondary" role="button" href="{{ url_for('dashboard') }}">Cancel</a>
         {% endif %}
+
+        <!-- New: turn footer navigation into real buttons -->
+        <button type="button" class="btn btn-outline-secondary"
+                onclick="window.location='{{ url_for('dashboard') }}'">← Back to Dashboard</button>
+        <button type="button" class="btn btn-outline-secondary"
+                onclick="window.location='{{ url_for('menu_hub') }}'">Go to Menu Dashboard</button>
       </div>
 
       <!-- hidden template for ingredient row -->
@@ -107,14 +117,9 @@
         </div>
       </template>
     </form>
-
-    <p style="margin-top:14px;">
-      ← <a href="{{ url_for('dashboard') }}">Back to Dashboard</a> |
-      <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
-    </p>
   </div>
 
-       <!-- EXISTING MENUS WITH TABS -->
+  <!-- EXISTING MENUS WITH TABS -->
   <div class="card">
     <h2>Existing Menus</h2>
     <p class="muted">Saved reusable menus grouped by meal.</p>
@@ -142,9 +147,9 @@
             <td>{{ m.title }}</td>
             <td style="text-align:center">{{ m.ingredients|length }}</td>
             <td>
-              <a class="btn btn-secondary" href="{{ url_for('menu_builder_edit', menu_id=m.id) }}">Edit</a>
-              <form method="post" action="{{ url_for('menu_builder_delete', menu_id=m.id) }}" style="display:inline"
-                    onsubmit="return confirm('Delete menu {{ m.title }}?');">
+              <a class="btn btn-secondary btn-sm" href="{{ url_for('menu_builder_edit', menu_id=m.id) }}">Edit</a>
+              <form method="post" action="{{ url_for('menu_builder_delete', menu_id=m.id) }}"
+                    style="display:inline" onsubmit="return confirm('Delete menu {{ m.title }}?');">
                 <button class="btn-danger" type="submit">Delete</button>
               </form>
             </td>
@@ -158,7 +163,7 @@
     </div>
     {% endfor %}
   </div>
-
+</div>
 
 <script>
   const list  = document.querySelector("#ing-list");
