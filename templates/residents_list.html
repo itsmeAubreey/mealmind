@@ -2,7 +2,7 @@
 {% block title %}Residents{% endblock %}
 
 {% block content %}
-<h1>Residents</h1>
+<h1 class="page-title">Residents</h1>
 
 <form method="get" class="resident-filter-bar">
   <input
@@ -10,15 +10,18 @@
     name="q"
     value="{{ request.args.get('q', '') }}"
     placeholder="Search by name, diet, allergy..."
+    aria-label="Search residents"
   />
-  <button type="submit" class="btn-filter">Filter</button>
+  <button type="submit" class="btn btn-primary">Filter</button>
 
   {% if request.args.get('q') %}
     <a href="{{ url_for('residents_list') }}" class="link-clear">Clear</a>
   {% endif %}
 
-  <!-- New resident button -->
-  <a href="{{ url_for('residents_new') }}" class="link-new">+ New Resident</a>
+  <!-- New Resident button (right aligned) -->
+  <a href="{{ url_for('residents_new') }}" class="btn btn-accent btn-new">
+    + New Resident
+  </a>
 </form>
 
 <table class="resident-table">
@@ -43,135 +46,128 @@
           <td>{{ r.first_name }}</td>
           <td>{{ r.last_name }}</td>
           <td>{{ age(r.birthday) }}</td>
-          <td>
-            {% if r.birthday %}
-              {{ r.birthday.strftime("%Y-%m-%d") }}
-            {% endif %}
-          </td>
+          <td>{% if r.birthday %}{{ r.birthday.strftime("%Y-%m-%d") }}{% endif %}</td>
           <td>{{ r.medications or "" }}</td>
           <td>{{ r.illnesses or "" }}</td>
           <td>{{ r.allergies or "" }}</td>
           <td>{{ r.fluids or "" }}</td>
           <td>{{ r.diet or "" }}</td>
           <td class="actions">
-            <a href="{{ url_for('residents_edit', rid=r.id) }}">Edit</a>
+            <a href="{{ url_for('residents_edit', rid=r.id) }}" class="link-action">Edit</a>
             {% if r.id %}
-              <a href="{{ url_for('resident_print', rid=r.id) }}" title="Print resident card">🖨</a>
-
+              <a href="{{ url_for('resident_print', rid=r.id) }}" class="link-action" title="Print resident card">🖨</a>
             {% endif %}
           </td>
         </tr>
       {% endfor %}
     {% else %}
       <tr>
-        <td colspan="10" style="text-align:center; padding:12px;">
-          No residents found.
-        </td>
+        <td colspan="10" class="empty-row">No residents found.</td>
       </tr>
     {% endif %}
   </tbody>
 </table>
 
-<div class="back-wrapper">
-  <a href="{{ url_for('dashboard') }}" class="back-btn">
+<div class="footer-actions">
+  <a href="{{ url_for('dashboard') }}" class="btn btn-neutral">
     &larr; Back to Dashboard
   </a>
 </div>
 
 <style>
+  .page-title {
+    margin: 0 0 .5rem 0;
+  }
+
+  /* ---- toolbar ---- */
   .resident-filter-bar {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: .6rem;
     align-items: center;
-    margin-bottom: 0.75rem;
+    margin: .25rem 0 .85rem 0;
+    flex-wrap: wrap;
   }
-
   .resident-filter-bar input[type="text"] {
-    flex: 1 1 220px;
-    max-width: 360px;
-    padding: 0.4rem 0.5rem;
-    border-radius: 0.35rem;
+    flex: 1 1 280px;
+    max-width: 420px;
+    padding: .45rem .55rem;
+    border-radius: .45rem;
     border: 1px solid #cbd5f5;
-    font-size: 0.9rem;
+    font-size: .95rem;
   }
-
-  .btn-filter {
-    padding: 0.4rem 0.85rem;
-    border-radius: 0.4rem;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
-    font-size: 0.9rem;
-    cursor: pointer;
-  }
-
-  .btn-filter:hover {
-    background: #1d4ed8;
-  }
-
-  .link-clear,
-  .link-new {
-    font-size: 0.9rem;
+  .link-clear {
     text-decoration: underline;
     color: #4c1d95;
+    font-size: .95rem;
   }
 
-  .link-new {
+  /* Right-align the New button on the row */
+  .resident-filter-bar .btn-new {
     margin-left: auto;
-    font-weight: 600;
   }
 
+  /* ---- buttons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .48rem .9rem;
+    border-radius: .6rem;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .95rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+  }
+  .btn-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+
+  .btn-accent {
+    background: #10b981;     /* teal accent */
+    border-color: #10b981;
+    color: #fff;
+  }
+  .btn-accent:hover { background: #0ea371; border-color: #0ea371; }
+
+  .btn-neutral {
+    background: #e5e7eb;
+    border-color: #e5e7eb;
+    color: #111827;
+  }
+  .btn-neutral:hover { background: #d1d5db; border-color: #d1d5db; }
+
+  /* ---- table ---- */
   .resident-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 0.25rem;
-    font-size: 0.9rem;
+    font-size: .95rem;
   }
-
   .resident-table th,
   .resident-table td {
     border: 1px solid #d4d4d4;
-    padding: 6px 8px;
+    padding: 8px 10px;
     text-align: left;
     vertical-align: top;
   }
+  .resident-table th { background: #f3f4f6; }
+  .resident-table tbody tr:nth-child(odd) td { background: #fbfbfd; }
 
-  .resident-table th {
-    background: #f3f4f6;
+  .actions { white-space: nowrap; }
+  .link-action { margin-right: .4rem; }
+
+  .empty-row {
+    text-align: center;
+    padding: 14px;
   }
 
-  .resident-table tbody tr:nth-child(odd) td {
-    background: #f9fafb;
-  }
-
-  .resident-table td.actions {
-    white-space: nowrap;
-  }
-
-  .resident-table td.actions a {
-    margin-right: 0.35rem;
-  }
-
-  .back-wrapper {
-    margin-top: 12px;
-  }
-
-  .back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.4rem 0.9rem;
-    border-radius: 999px;
-    background: #e5e7eb;
-    color: #111827;
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .back-btn:hover {
-    background: #d1d5db;
+  .footer-actions {
+    margin-top: 14px;
   }
 </style>
 {% endblock %}
