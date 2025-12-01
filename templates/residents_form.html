@@ -3,40 +3,27 @@
 {% block content %}
 
 <style>
-  .resident-form { max-width: 520px; }
+  /* lightweight form + button styles (works with your base.css too) */
+  .resident-form { max-width: 560px; }
   .resident-form .form-group { margin-bottom: 12px; }
   .resident-form label { display:block; font-weight:600; margin-bottom:6px; }
   .resident-form .form-control {
-    width: 100%;
-    box-sizing: border-box;
-    height: 42px;
-    padding: 8px 10px;
+    width: 100%; box-sizing: border-box; height: 42px; padding: 8px 10px;
   }
-  .resident-form textarea.form-control {
-    min-height: 100px;
-    height: auto;
-    line-height: 1.35;
-  }
-  .resident-form .actions { display:flex; gap:12px; margin-top: 12px; }
+  .resident-form textarea.form-control { min-height: 100px; height: auto; line-height: 1.35; }
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:8px; border:0; cursor:pointer; text-decoration:none; }
+  .btn-primary { background:#2563eb; color:#fff; }
+  .btn-primary:hover { background:#1e40af; }
+  .btn-secondary { background:#e5e7eb; color:#111827; }
+  .btn-secondary:hover { background:#d1d5db; }
+  .btn-danger { background:#b91c1c; color:#fff; }
+  .btn-danger:hover { background:#991b1b; }
+  .actions { display:flex; gap:10px; margin-top: 12px; flex-wrap:wrap; }
+  .nav-actions { display:flex; gap:10px; margin-top: 14px; flex-wrap:wrap; }
 </style>
-<style>
-  .btn-danger {
-    background: #b91c1c;
-    color: white;
-    border: none;
-    padding: 6px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .btn-danger:hover {
-    background: #991b1b;
-  }
-</style>
-
 
 <h1 class="mb-3">{{ 'Edit Resident' if resident else 'New Resident' }}</h1>
 
-{# support old "errors" if they were passed #}
 {% if errors %}
   <div class="alert alert-danger">
     <ul class="mb-0">
@@ -45,9 +32,8 @@
   </div>
 {% endif %}
 
-{# ---- unify values from either resident or values{} ---- #}
+{# normalize values from either resident object or a values dict #}
 {% set src = resident if resident else (values if values else {}) %}
-
 {% set first_name  = src.first_name  if src is not mapping else src.get('first_name','') %}
 {% set last_name   = src.last_name   if src is not mapping else src.get('last_name','') %}
 {% set birthday    = src.birthday    if src is not mapping else src.get('birthday','') %}
@@ -61,20 +47,18 @@
 <form method="post" novalidate class="resident-form">
   <div class="form-group">
     <label for="first_name">First Name *</label>
-    <input id="first_name" name="first_name" type="text"
-           class="form-control" required value="{{ first_name or '' }}">
+    <input id="first_name" name="first_name" type="text" class="form-control" required value="{{ first_name or '' }}">
   </div>
 
   <div class="form-group">
     <label for="last_name">Last Name *</label>
-    <input id="last_name" name="last_name" type="text"
-           class="form-control" required value="{{ last_name or '' }}">
+    <input id="last_name" name="last_name" type="text" class="form-control" required value="{{ last_name or '' }}">
   </div>
 
   <div class="form-group">
     <label for="birthday">Birthday *</label>
     <input id="birthday" name="birthday" type="date" class="form-control"
-           value="{% if birthday %}{% if birthday.__class__.__name__ == 'date' %}{{ birthday.strftime('%Y-%m-%d') }}{% else %}{{ birthday }}{% endif %}{% endif %}">
+      value="{% if birthday %}{% if birthday.__class__.__name__ == 'date' %}{{ birthday.strftime('%Y-%m-%d') }}{% else %}{{ birthday }}{% endif %}{% endif %}">
     <small class="form-text text-muted">Age is auto-calculated from birthday.</small>
   </div>
 
@@ -127,20 +111,17 @@
 </form>
 
 {% if mode == 'edit' %}
-<form method="post"
-      action="{{ url_for('residents_delete', rid=rid) }}"
-      onsubmit="return confirm('Are you sure you want to delete this resident? This cannot be undone.');"
-      style="margin-top: 12px;">
-  <button type="submit" class="btn-danger">
-    Delete Resident
-  </button>
-</form>
+  <form method="post"
+        action="{{ url_for('residents_delete', rid=rid) }}"
+        onsubmit="return confirm('Delete this resident? This cannot be undone.');"
+        style="margin-top:12px;">
+    <button type="submit" class="btn btn-danger">Delete Resident</button>
+  </form>
 {% endif %}
 
-
-<p style="margin-top:14px;">
-  ← <a href="{{ url_for('residents_list') }}">Back to Residents</a> |
-  <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-</p>
+<div class="nav-actions">
+  <a class="btn btn-secondary" href="{{ url_for('residents_list') }}">← Back to Residents</a>
+  <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</div>
 
 {% endblock %}
