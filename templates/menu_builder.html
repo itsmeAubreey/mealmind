@@ -83,13 +83,15 @@
       <div class="actions">
         <button class="btn btn-primary" type="submit">{{ 'Save Changes' if editing else 'Save Menu' }}</button>
 
+        {# Cancel as a real button (styled), navigates via JS #}
         {% if editing %}
-          <a class="btn btn-secondary" role="button" href="{{ url_for('menu_builder') }}">Cancel</a>
+          <button type="button" class="btn btn-secondary"
+                  onclick="window.location='{{ url_for('menu_builder') }}'">Cancel</button>
         {% else %}
-          <a class="btn btn-secondary" role="button" href="{{ url_for('dashboard') }}">Cancel</a>
+          <button type="button" class="btn btn-secondary"
+                  onclick="window.location='{{ url_for('dashboard') }}'">Cancel</button>
         {% endif %}
 
-        <!-- New: turn footer navigation into real buttons -->
         <button type="button" class="btn btn-outline-secondary"
                 onclick="window.location='{{ url_for('dashboard') }}'">← Back to Dashboard</button>
         <button type="button" class="btn btn-outline-secondary"
@@ -124,14 +126,12 @@
     <h2>Existing Menus</h2>
     <p class="muted">Saved reusable menus grouped by meal.</p>
 
-    <!-- Tabs -->
     <div class="nav-tabs">
       <button class="tab-btn active" data-tab="breakfast">Breakfast</button>
       <button class="tab-btn" data-tab="lunch">Lunch</button>
       <button class="tab-btn" data-tab="dinner">Dinner</button>
     </div>
 
-    <!-- Tab Contents -->
     {% for meal_type in ['Breakfast','Lunch','Dinner'] %}
     <div class="tab-pane {% if loop.first %}active{% endif %}" id="{{ meal_type|lower }}">
       {% set filtered = menus | selectattr('meal_type', 'equalto', meal_type) | list %}
@@ -147,7 +147,11 @@
             <td>{{ m.title }}</td>
             <td style="text-align:center">{{ m.ingredients|length }}</td>
             <td>
-              <a class="btn btn-secondary btn-sm" href="{{ url_for('menu_builder_edit', menu_id=m.id) }}">Edit</a>
+              <!-- Edit as a real button (styled) using JS navigation -->
+              <button type="button" class="btn btn-secondary btn-sm"
+                      onclick="window.location='{{ url_for('menu_builder_edit', menu_id=m.id) }}'">Edit</button>
+
+              <!-- Delete stays a POST form -->
               <form method="post" action="{{ url_for('menu_builder_delete', menu_id=m.id) }}"
                     style="display:inline" onsubmit="return confirm('Delete menu {{ m.title }}?');">
                 <button class="btn-danger" type="submit">Delete</button>
