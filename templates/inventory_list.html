@@ -2,41 +2,47 @@
 {% block title %}Inventory{% endblock %}
 
 {% block content %}
-<h1>Inventory</h1>
+<h1 class="page-title">Inventory</h1>
 
-<form method="get" action="{{ url_for('inventory_list') }}" class="inventory-filters">
-  <input
-    type="text"
-    name="q"
-    value="{{ q }}"
-    placeholder="Search item..."
-  />
-  <select name="show">
-    <option value="all" {% if show == 'all' %}selected{% endif %}>All</option>
-    <option value="low" {% if show == 'low' %}selected{% endif %}>Low / Out of stock</option>
-  </select>
-  <button type="submit">Filter</button>
+<form method="get" action="{{ url_for('inventory_list') }}" class="toolbar">
+  <div class="toolbar-left">
+    <input
+      type="text"
+      name="q"
+      value="{{ q }}"
+      placeholder="Search item…"
+      class="input"
+      aria-label="Search item"
+    />
 
-  <a href="{{ url_for('inventory_new') }}" class="link-new">+ New Item</a>
+    <select name="show" class="select" aria-label="Show filter">
+      <option value="all" {% if show == 'all' %}selected{% endif %}>All</option>
+      <option value="low" {% if show == 'low' %}selected{% endif %}>Low / Out of stock</option>
+    </select>
 
-  {# Export button: respects search + current filter #}
-  <a
-    href="{{ url_for('inventory_export',
-                     q=q,
-                     status='low' if show == 'low' else 'all') }}"
-    class="btn-export"
-  >
-    Export CSV
-  </a>
+    <button type="submit" class="btn btn-dark">Filter</button>
+  </div>
+
+  <div class="toolbar-right">
+    <a href="{{ url_for('inventory_new') }}" class="btn btn-primary">+ New Item</a>
+
+    <a
+      href="{{ url_for('inventory_export', q=q, status='low' if show == 'low' else 'all') }}"
+      class="btn btn-outline"
+      title="Export current list to CSV"
+    >
+      Export CSV
+    </a>
+  </div>
 </form>
 
-<table class="inventory-table">
+<table class="table">
   <thead>
     <tr>
       <th>Item</th>
       <th>Unit</th>
       <th>Quantity</th>
-      <th>Actions</th>
+      <th style="width: 220px;">Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -47,99 +53,89 @@
         <td>
           {{ "%.2f"|format(item.qty) }}
           {% if item.status == 'out' %}
-            <span class="status status-out">OUT OF STOCK</span>
+            <span class="badge badge-red">OUT OF STOCK</span>
           {% elif item.status == 'low' %}
-            <span class="status status-low">LOW</span>
+            <span class="badge badge-amber">LOW</span>
           {% endif %}
         </td>
-        <td class="inventory-actions">
-          <form
-            method="post"
-            action="{{ url_for('inventory_bump', iid=item.obj.id, q=q, show=show) }}"
-            style="display:inline;"
-          >
-            <input type="hidden" name="delta" value="-1">
-            <button type="submit" class="btn-qty">−</button>
-          </form>
-          <form
-            method="post"
-            action="{{ url_for('inventory_bump', iid=item.obj.id, q=q, show=show) }}"
-            style="display:inline;"
-          >
-            <input type="hidden" name="delta" value="1">
-            <button type="submit" class="btn-qty">+</button>
-          </form>
-          <a href="{{ url_for('inventory_edit', iid=item.obj.id) }}">Edit</a>
+        <td>
+          <div class="actions">
+            <form
+              method="post"
+              action="{{ url_for('inventory_bump', iid=item.obj.id, q=q, show=show) }}"
+            >
+              <input type="hidden" name="delta" value="-1">
+              <button type="submit" class="btn btn-qty" title="Decrease">−</button>
+            </form>
+
+            <form
+              method="post"
+              action="{{ url_for('inventory_bump', iid=item.obj.id, q=q, show=show) }}"
+            >
+              <input type="hidden" name="delta" value="1">
+              <button type="submit" class="btn btn-qty" title="Increase">+</button>
+            </form>
+
+            <a href="{{ url_for('inventory_edit', iid=item.obj.id) }}" class="btn btn-secondary">
+              Edit
+            </a>
+          </div>
         </td>
       </tr>
     {% endfor %}
   </tbody>
 </table>
 
-<p style="margin-top: 12px;">
-  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-</p>
+<div class="footer-nav">
+  <a href="{{ url_for('dashboard') }}" class="btn btn-light">← Back to Dashboard</a>
+</div>
 
 <style>
-  .inventory-filters {
-    margin: 8px 0 12px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-  }
-  .inventory-filters input[type="text"] {
-    padding: 4px 6px;
-    width: 220px;
-  }
-  .inventory-filters select {
-    padding: 4px 6px;
-  }
-  .inventory-filters button {
-    padding: 4px 10px;
-  }
-  .inventory-filters .link-new {
-    margin-left: 8px;
-  }
-  .inventory-filters .btn-export {
-    margin-left: auto;
-    padding: 4px 10px;
-    border: 1px solid #4b5563;
-    border-radius: 4px;
-    text-decoration: none;
-  }
+  /* --- layout --- */
+  .page-title { margin: 8px 0 14px; }
 
-  .inventory-table {
-    width: 100%;
-    border-collapse: collapse;
+  .toolbar {
+    margin: 8px 0 14px;
+    display: flex; flex-wrap: wrap;
+    gap: 10px;
+    align-items: center; justify-content: space-between;
   }
-  .inventory-table th,
-  .inventory-table td {
-    border: 1px solid #d4d4d4;
-    padding: 6px 8px;
-    text-align: left;
+  .toolbar-left { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .toolbar-right { display: flex; gap: 8px; }
+
+  .input, .select {
+    padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min-width: 220px;
   }
-  .inventory-table thead th {
-    background-color: #f3f4f6;
-    font-weight: 600;
+  .select { min-width: 160px; }
+
+  /* --- buttons --- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 600; text-decoration: none; border-radius: 9999px;
+    padding: 8px 14px; border: 1px solid transparent; cursor: pointer;
   }
-  .inventory-actions {
-    white-space: nowrap;
-  }
-  .btn-qty {
-    padding: 3px 8px;
-    margin-right: 2px;
-  }
-  .status {
-    margin-left: 4px;
-    font-size: 0.8rem;
-    font-weight: 600;
-  }
-  .status-low {
-    color: #b45309; /* amber-ish */
-  }
-  .status-out {
-    color: #b91c1c; /* red-ish */
-  }
+  .btn-dark     { background:#111827; color:#fff; }
+  .btn-primary  { background: linear-gradient(135deg,#5b21b6,#2563eb); color:#fff; }
+  .btn-secondary{ background:#0ea5e9; color:#fff; }
+  .btn-outline  { background:#fff; color:#111827; border-color:#334155; }
+  .btn-light    { background:#eef2ff; color:#1f2937; }
+  .btn-qty      { background:#f8fafc; color:#111827; border:1px solid #cbd5e1; padding:6px 10px; }
+
+  .btn:hover    { filter: brightness(0.95); }
+
+  /* --- table --- */
+  .table { width: 100%; border-collapse: collapse; }
+  .table th, .table td { border-bottom: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; }
+  .table thead th { background:#f8fafc; font-weight:700; }
+
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .actions form { display: inline; }
+
+  /* badges */
+  .badge { margin-left: 8px; font-size: .75rem; font-weight: 700; }
+  .badge-amber { color:#b45309; }
+  .badge-red   { color:#b91c1c; }
+
+  .footer-nav { margin-top: 16px; }
 </style>
 {% endblock %}
