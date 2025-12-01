@@ -14,6 +14,7 @@
   .qty-group input{width:100%;text-align:center;border:none;height:42px}
   .muted{color:#6b7280;font-size:13px}
   .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2f6;font-weight:600}
+  .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
 </style>
 
 <h1>Menu Scheduler</h1>
@@ -35,7 +36,6 @@
     {% for meal in ["Breakfast","Lunch","Dinner"] %}
     <div class="card meal-card" data-meal="{{ meal }}">
       <h2>{{ meal }}</h2>
-
       <div class="row">
         <select class="form-control menu-select" name="{{ meal }}_menu">
           <option value="">— Choose a saved menu —</option>
@@ -45,15 +45,16 @@
         </select>
         <span class="muted">Items will appear below and can be adjusted.</span>
       </div>
-
       <div class="items"></div>
     </div>
     {% endfor %}
   </div>
 
-  <div class="actions" style="margin-top:12px">
-    <button class="btn btn-primary" type="submit">Save & Deduct Inventory</button>
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Save &amp; Deduct Inventory</button>
     <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
+    <a class="btn btn-link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+    <a class="btn btn-link" href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
   </div>
 </form>
 
@@ -67,12 +68,6 @@
     </ul>
   </div>
 {% endif %}
-
-<p style="margin-top:12px">
-  ← <a href="{{ url_for('dashboard') }}">Back to Dashboard</a> |
-  <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
-</p>
-
 
 <script>
   async function fetchMenu(menuId){
@@ -88,7 +83,7 @@
 
     const name = document.createElement('input');
     name.className = 'form-control';
-    name.value = `${ing.name}`;
+    name.value = ing.name;
     name.disabled = true;
 
     const qtyWrap = document.createElement('div');
@@ -101,7 +96,7 @@
 
     const qty = document.createElement('input');
     qty.type = 'number'; qty.step = 'any'; qty.min = '0';
-    qty.name = `${meal}_qty_${ing.id}`;  // MUST match app.py expectation
+    qty.name = `${meal}_qty_${ing.id}`;  // name expected by app.py
     qty.value = ing.quantity;
 
     dec.addEventListener('click', ()=> { qty.value = Math.max(0, (+qty.value||0)-1); });
@@ -110,7 +105,8 @@
     qtyWrap.appendChild(dec); qtyWrap.appendChild(qty); qtyWrap.appendChild(inc);
 
     const unit = document.createElement('input');
-    unit.className = 'form-control'; unit.value = ing.unit || '';
+    unit.className = 'form-control';
+    unit.value = ing.unit || '';
     unit.disabled = true;
 
     wrap.appendChild(name);
