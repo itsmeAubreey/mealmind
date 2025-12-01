@@ -18,7 +18,7 @@
     <a href="{{ url_for('residents_list') }}" class="link-clear">Clear</a>
   {% endif %}
 
-  <!-- New Resident button (right aligned) -->
+  <!-- New Resident (right-aligned) -->
   <a href="{{ url_for('residents_new') }}" class="btn btn-accent btn-new">
     + New Resident
   </a>
@@ -53,9 +53,12 @@
           <td>{{ r.fluids or "" }}</td>
           <td>{{ r.diet or "" }}</td>
           <td class="actions">
-            <a href="{{ url_for('residents_edit', rid=r.id) }}" class="link-action">Edit</a>
+            <a href="{{ url_for('residents_edit', rid=r.id) }}"
+               class="btn btn-secondary btn-sm">Edit</a>
             {% if r.id %}
-              <a href="{{ url_for('resident_print', rid=r.id) }}" class="link-action" title="Print resident card">🖨</a>
+              <a href="{{ url_for('resident_print', rid=r.id) }}"
+                 class="btn btn-icon btn-sm"
+                 title="Print resident card">🖨</a>
             {% endif %}
           </td>
         </tr>
@@ -75,11 +78,9 @@
 </div>
 
 <style>
-  .page-title {
-    margin: 0 0 .5rem 0;
-  }
+  .page-title { margin: 0 0 .5rem 0; }
 
-  /* ---- toolbar ---- */
+  /* Toolbar */
   .resident-filter-bar {
     display: flex;
     gap: .6rem;
@@ -90,29 +91,25 @@
   .resident-filter-bar input[type="text"] {
     flex: 1 1 280px;
     max-width: 420px;
-    padding: .45rem .55rem;
-    border-radius: .45rem;
+    padding: .48rem .6rem;
+    border-radius: .55rem;
     border: 1px solid #cbd5f5;
     font-size: .95rem;
   }
+  .resident-filter-bar .btn-new { margin-left: auto; }
   .link-clear {
     text-decoration: underline;
     color: #4c1d95;
     font-size: .95rem;
   }
 
-  /* Right-align the New button on the row */
-  .resident-filter-bar .btn-new {
-    margin-left: auto;
-  }
-
-  /* ---- buttons ---- */
+  /* Buttons */
   .btn {
     display: inline-flex;
     align-items: center;
     gap: .35rem;
-    padding: .48rem .9rem;
-    border-radius: .6rem;
+    padding: .52rem .92rem;
+    border-radius: .7rem;
     text-decoration: none;
     font-weight: 600;
     font-size: .95rem;
@@ -121,53 +118,31 @@
     line-height: 1;
     white-space: nowrap;
   }
-  .btn-primary {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: #fff;
-  }
-  .btn-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+  .btn-sm { padding: .38rem .7rem; border-radius: .55rem; font-size: .9rem; }
+  .btn-icon { width: 2.1rem; justify-content: center; padding: .38rem 0; }
 
-  .btn-accent {
-    background: #10b981;     /* teal accent */
-    border-color: #10b981;
-    color: #fff;
-  }
-  .btn-accent:hover { background: #0ea371; border-color: #0ea371; }
+  .btn-primary   { background:#2563eb; border-color:#2563eb; color:#fff; }
+  .btn-primary:hover { background:#1d4ed8; border-color:#1d4ed8; }
 
-  .btn-neutral {
-    background: #e5e7eb;
-    border-color: #e5e7eb;
-    color: #111827;
-  }
-  .btn-neutral:hover { background: #d1d5db; border-color: #d1d5db; }
+  .btn-secondary { background:#f3f4f6; border-color:#e5e7eb; color:#111827; }
+  .btn-secondary:hover { background:#e5e7eb; border-color:#d1d5db; }
 
-  /* ---- table ---- */
-  .resident-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: .95rem;
-  }
-  .resident-table th,
-  .resident-table td {
-    border: 1px solid #d4d4d4;
-    padding: 8px 10px;
-    text-align: left;
-    vertical-align: top;
-  }
-  .resident-table th { background: #f3f4f6; }
-  .resident-table tbody tr:nth-child(odd) td { background: #fbfbfd; }
+  .btn-accent    { background:#10b981; border-color:#10b981; color:#fff; }
+  .btn-accent:hover { background:#0ea371; border-color:#0ea371; }
 
-  .actions { white-space: nowrap; }
-  .link-action { margin-right: .4rem; }
+  .btn-neutral   { background:#e5e7eb; border-color:#e5e7eb; color:#111827; }
+  .btn-neutral:hover { background:#d1d5db; border-color:#d1d5db; }
 
-  .empty-row {
-    text-align: center;
-    padding: 14px;
+  /* Table */
+  .resident-table { width:100%; border-collapse: collapse; font-size:.95rem; }
+  .resident-table th, .resident-table td {
+    border: 1px solid #d4d4d4; padding: 8px 10px; text-align:left; vertical-align: top;
   }
+  .resident-table th { background:#f3f4f6; }
+  .resident-table tbody tr:nth-child(odd) td { background:#fbfbfd; }
 
-  .footer-actions {
-    margin-top: 14px;
-  }
+  .actions { white-space: nowrap; display:flex; gap:.4rem; }
+  .empty-row { text-align:center; padding:14px; }
+  .footer-actions { margin-top:14px; }
 </style>
 {% endblock %}
