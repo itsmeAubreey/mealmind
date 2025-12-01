@@ -54,7 +54,7 @@
           <td>{{ r.fluids or "" }}</td>
           <td>{{ r.diet or "" }}</td>
           <td class="actions">
-            <a href="{{ url_for('residents_edit', resident_id=r.id) }}">Edit</a>
+            <a href="{{ url_for('residents_edit', rid=r.id) }}">Edit</a>
             {% if r.id %}
               <a
                 href="{{ url_for('resident_print', resident_id=r.id) }}"
