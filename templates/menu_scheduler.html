@@ -14,7 +14,7 @@
   .qty-group input{width:100%;text-align:center;border:none;height:42px}
   .muted{color:#6b7280;font-size:13px}
   .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2f6;font-weight:600}
-  .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
 </style>
 
 <h1>Menu Scheduler</h1>
@@ -52,9 +52,11 @@
 
   <div class="actions">
     <button class="btn btn-primary" type="submit">Save &amp; Deduct Inventory</button>
-    <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
-    <a class="btn btn-link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
-    <a class="btn btn-link" href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
+
+    <!-- Converted all footer links to real buttons -->
+    <a class="btn btn-secondary" role="button" href="{{ url_for('dashboard') }}">Cancel</a>
+    <a class="btn btn-outline" role="button" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+    <a class="btn btn-outline" role="button" href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
   </div>
 </form>
 
