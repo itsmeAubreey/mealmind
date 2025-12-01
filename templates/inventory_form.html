@@ -34,17 +34,11 @@
 
     <div class="form-row">
       <label for="unit">Unit</label>
-      <select
-        id="unit"
-        name="unit"
-        {% if limited %}disabled{% endif %}
-      >
+      <select id="unit" name="unit" {% if limited %}disabled{% endif %}>
         {% for u in units %}
           <option value="{{ u }}"
             {% if values.get('unit', 'pcs') == u %}selected{% endif %}
-          >
-            {{ u }}
-          </option>
+          >{{ u }}</option>
         {% endfor %}
       </select>
     </div>
@@ -79,36 +73,36 @@
     </div>
 
     {% if not limited %}
-      <div class="form-actions">
-        <button type="submit" class="btn-primary">
+      <div class="actions-row">
+        <button type="submit" class="btn btn-primary">
           {% if mode == 'edit' %}Save Changes{% else %}Create{% endif %}
         </button>
-        <a href="{{ url_for('inventory_list') }}" class="link-inline">Cancel</a>
+
+        <!-- Cancel back to list as a button-styled link -->
+        <a href="{{ url_for('inventory_list') }}" class="btn btn-outline">Cancel</a>
+
+        <!-- Extra nav buttons -->
+        <span class="spacer"></span>
+        <a href="{{ url_for('inventory_list') }}" class="btn btn-secondary">← Back to Inventory</a>
+        <a href="{{ url_for('dashboard') }}" class="btn">🏠 Back to Dashboard</a>
       </div>
     {% else %}
-      <p class="hint">
-        You have view-only access to inventory items.
-      </p>
-      <div class="form-actions">
-        <a href="{{ url_for('inventory_list') }}" class="link-inline">Back to Inventory</a>
+      <p class="hint">You have view-only access to inventory items.</p>
+      <div class="actions-row">
+        <a href="{{ url_for('inventory_list') }}" class="btn btn-secondary">← Back to Inventory</a>
+        <a href="{{ url_for('dashboard') }}" class="btn">🏠 Back to Dashboard</a>
       </div>
     {% endif %}
   </form>
 </div>
 
-<p style="margin-top: 12px;">
-  &larr; <a href="{{ url_for('inventory_list') }}">Back to Inventory</a>
-  &nbsp; | &nbsp;
-  <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-</p>
-
 <style>
   .form-card {
-    max-width: 420px;
+    max-width: 520px;
     background: #ffffff;
     border-radius: 12px;
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-    padding: 16px 18px 18px;
+    padding: 18px 18px 20px;
     margin-top: 10px;
   }
   .form-row {
@@ -122,9 +116,10 @@
   }
   .form-row input,
   .form-row select {
-    padding: 6px 8px;
+    padding: 8px 10px;
     border: 1px solid #d1d5db;
-    border-radius: 4px;
+    border-radius: 6px;
+    font-size: 14px;
   }
   .form-row input:disabled,
   .form-row select:disabled {
@@ -132,30 +127,57 @@
     color: #6b7280;
   }
   .hint {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: #6b7280;
     margin-top: 4px;
   }
-  .form-actions {
-    margin-top: 12px;
+
+  .actions-row {
+    margin-top: 14px;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
   }
+  .spacer { flex: 1 1 auto; }
+
+  /* Button styles (local, so it works regardless of base.css) */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #eef2ff;
+    color: #111827;
+    border: 1px solid #c7d2fe;
+    padding: 8px 14px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:hover { background: #e0e7ff; }
+
   .btn-primary {
     background: #111827;
     color: #ffffff;
-    border: none;
-    padding: 6px 14px;
-    border-radius: 4px;
-    cursor: pointer;
+    border: 1px solid #111827;
   }
-  .btn-primary:hover {
-    background: #0f172a;
+  .btn-primary:hover { background: #0f172a; }
+
+  .btn-secondary {
+    background: #f3f4f6;
+    color: #111827;
+    border: 1px solid #e5e7eb;
   }
-  .link-inline {
-    text-decoration: underline;
+  .btn-secondary:hover { background: #e5e7eb; }
+
+  .btn-outline {
+    background: #ffffff;
+    color: #111827;
+    border: 1px solid #d1d5db;
   }
+  .btn-outline:hover { background: #f9fafb; }
+
   .form-errors {
     border: 1px solid #fca5a5;
     background: #fef2f2;
@@ -163,7 +185,7 @@
     padding: 8px 10px;
     border-radius: 6px;
     margin-bottom: 10px;
-    max-width: 420px;
+    max-width: 520px;
   }
   .form-errors ul {
     margin: 0;
