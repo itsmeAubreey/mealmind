@@ -56,10 +56,8 @@
           <td class="actions">
             <a href="{{ url_for('residents_edit', rid=r.id) }}">Edit</a>
             {% if r.id %}
-              <a
-                href="{{ url_for('resident_print', resident_id=r.id) }}"
-                title="Print resident card"
-              >🖨</a>
+              <a href="{{ url_for('resident_print', rid=r.id) }}" title="Print resident card">🖨</a>
+
             {% endif %}
           </td>
         </tr>
