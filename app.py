@@ -293,8 +293,13 @@ def create_app():
     @app.route("/residents")
     @login_required
     def residents_list():
-        """List residents with simple text search (no pagination)."""
+        """List residents with text search + simple pagination."""
         q = (request.args.get("q") or "").strip()
+
+        # Which page are we on? Default = 1
+        page = request.args.get("page", 1, type=int)
+        per_page = 15  # 👈 change this number if you want more/less rows per page
+
         query = Resident.query
 
         if q:
@@ -308,8 +313,38 @@ def create_app():
                 )
             )
 
-        residents = query.order_by(Resident.last_name, Resident.first_name).all()
-        return render_template("residents_list.html", residents=residents, q=q)
+        # Always apply ordering *before* pagination
+        query = query.order_by(Resident.last_name, Resident.first_name)
+
+        # How many rows total?
+        total = query.count()
+
+        # Keep page in a valid range
+        if page < 1:
+            page = 1
+
+        total_pages = (total + per_page - 1) // per_page if total else 1
+
+        if page > total_pages:
+            page = total_pages
+
+        # Apply offset/limit for this page
+        residents = (
+            query
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+
+        return render_template(
+            "residents_list.html",
+            residents=residents,
+            q=q,
+            page=page,
+            total_pages=total_pages,
+            total=total,
+        )
+
 
     @app.route("/residents/new", methods=["GET", "POST"])
     @login_required
