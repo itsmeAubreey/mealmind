@@ -11,10 +11,11 @@
     type="text"
     name="q"
     value="{{ q }}"
+    class="input"
     placeholder="Search by first, last, username, ID, or email"
   />
-  <label for="role-select">Filter by role</label>
-  <select id="role-select" name="role">
+  <label for="role-select" class="muted">Filter by role</label>
+  <select id="role-select" name="role" class="input">
     <option value="all" {% if role_filter == 'all' %}selected{% endif %}>All roles</option>
     {% for r in roles %}
       <option value="{{ r }}" {% if role_filter == r %}selected{% endif %}>
@@ -23,10 +24,12 @@
     {% endfor %}
   </select>
 
-  <button type="submit">Filter</button>
-  <a href="{{ url_for('staff_list') }}" class="link-clear">Clear</a>
+  <button type="submit" class="btn primary">Filter</button>
+  <a href="{{ url_for('staff_list') }}" class="btn outline">Clear</a>
 
-  <a href="{{ url_for('staff_new') }}" class="link-new">+ New Staff</a>
+  <span class="spacer"></span>
+
+  <a href="{{ url_for('staff_new') }}" class="btn primary">+ New Staff</a>
 </form>
 
 <table class="staff-table">
@@ -37,7 +40,7 @@
       <th>Employee ID</th>
       <th>Email</th>
       <th>Role</th>
-      <th>Actions</th>
+      <th style="width:170px;text-align:center">Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -49,82 +52,68 @@
       <td>{{ u.email }}</td>
       <td>{{ u.role }}</td>
       <td class="staff-actions">
-        <a href="{{ url_for('staff_edit', uid=u.id) }}">Edit</a>
+        <a class="btn secondary" href="{{ url_for('staff_edit', uid=u.id) }}">Edit</a>
 
         <form method="post"
               action="{{ url_for('staff_delete', uid=u.id) }}"
-              style="display:inline;"
+              style="display:inline"
               onsubmit="return confirm('Delete staff {{ u.first_name }} {{ u.last_name }}?');">
-          <button type="submit" class="btn-delete">Delete</button>
+          <button type="submit" class="btn danger">Delete</button>
         </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="muted" style="text-align:center;padding:14px">
+        No staff found.
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 
-<p style="margin-top: 12px;">
-  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-</p>
+<div class="footer-actions">
+  <a class="btn secondary" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+</div>
 
 <style>
-  /* Filters row – match Inventory/Residents look */
-  .staff-filters {
-    margin: 8px 0 12px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
+  /* ===== Buttons ===== */
+  .btn{
+    display:inline-flex;align-items:center;gap:.4rem;
+    padding:.5rem .85rem;border:1px solid #cfd6e3;border-radius:.55rem;
+    background:#fff;color:#0f172a;text-decoration:none;font-weight:600;
+    box-shadow:0 1px 0 rgba(0,0,0,.02);cursor:pointer;
+    transition:background .15s ease,border-color .15s ease,box-shadow .15s ease;
   }
-  .staff-filters input[type="text"] {
-    padding: 4px 6px;
-    min-width: 260px;
-  }
-  .staff-filters select {
-    padding: 4px 6px;
-  }
-  .staff-filters button {
-    padding: 4px 10px;
-  }
-  .staff-filters .link-clear {
-    margin-left: 4px;
-  }
-  .staff-filters .link-new {
-    margin-left: auto;
-    text-decoration: underline;
-  }
+  .btn:hover{background:#f3f4f6}
+  .btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}
+  .btn.primary:hover{background:#1e4fd6;border-color:#1e4fd6}
+  .btn.secondary{background:#eef2ff;border-color:#c7d2fe}
+  .btn.secondary:hover{background:#e0e7ff}
+  .btn.outline{background:#fff;border-color:#cfd6e3}
+  .btn.outline:hover{background:#f8fafc}
+  .btn.danger{background:#ef4444;border-color:#ef4444;color:#fff}
+  .btn.danger:hover{background:#dc2626;border-color:#dc2626}
 
-  /* Table – copy the Inventory layout style */
-  .staff-table {
-    width: 100%;
-    border-collapse: collapse;
+  /* ===== Inputs / Filters ===== */
+  .input{
+    height:40px;border:1px solid #cfd6e3;border-radius:.5rem;padding:0 .6rem;background:#fff;
   }
-  .staff-table th,
-  .staff-table td {
-    border: 1px solid #d4d4d4;
-    padding: 6px 8px;
-    text-align: left;
+  .muted{color:#6b7280}
+  .staff-filters{
+    margin:10px 0 14px;display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;
   }
-  .staff-table thead th {
-    background-color: #f3f4f6;
-    font-weight: 600;
-  }
-  .staff-actions {
-    white-space: nowrap;
-  }
+  .staff-filters .input[type="text"]{min-width:260px}
+  .spacer{flex:1 1 auto}
 
-  /* Red delete button */
-  .btn-delete {
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: none;
-    background: #ef4444;
-    color: #ffffff;
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-  .btn-delete:hover {
-    background: #b91c1c;
-  }
+  /* ===== Table ===== */
+  .staff-table{width:100%;border-collapse:collapse;background:#fff}
+  .staff-table th,.staff-table td{border-bottom:1px solid #e5e7eb;padding:10px 8px;text-align:left}
+  .staff-table thead th{background:#f8fafc;font-weight:700}
+  .staff-table tbody tr:nth-child(odd) td{background:#fafbff}
+  .staff-actions{display:flex;gap:.5rem;justify-content:center}
+
+  /* ===== Footer ===== */
+  .footer-actions{margin-top:12px}
 </style>
 {% endblock %}
