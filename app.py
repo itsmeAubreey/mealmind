@@ -578,7 +578,7 @@ def create_app():
 
         # Which page? default = 1
         page = request.args.get("page", 1, type=int)
-        per_page = 25  # 👈 adjust if you want more/less rows per page
+        per_page = 20  # 👈 adjust if you want more/less rows per page
 
         query = InventoryItem.query
         if q:
