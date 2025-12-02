@@ -9,19 +9,14 @@
 </p>
 
 <div class="week-nav">
-  <div>
-    <a href="{{ prev_url }}">&larr; Previous Week</a>
-  </div>
-  <div>
-    <a href="{{ next_url }}">Next Week &rarr;</a>
-  </div>
+  <a class="link-btn outline" href="{{ prev_url }}">← Previous Week</a>
+  <a class="link-btn outline" href="{{ next_url }}">Next Week →</a>
 </div>
 
 <table class="planned-table">
   <thead>
     <tr>
       <th class="meal-col">Meal</th>
-      {# show actual day names instead of blank headers #}
       {% for day in days %}
         <th>{{ day.date.strftime('%A') }}</th>
       {% endfor %}
@@ -50,13 +45,32 @@
   </tbody>
 </table>
 
-<p style="margin-top: 12px;">
-  &larr; <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-  &nbsp; | &nbsp;
-  <a href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
-</p>
+<div class="bottom-controls">
+  <a class="link-btn secondary" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+  <a class="link-btn outline" href="{{ url_for('menu_hub') }}">Go to Menu Dashboard</a>
+</div>
 
 <style>
+  /* --- Button look for anchors (local, does not rely on site-wide CSS) --- */
+  .link-btn{
+    display:inline-flex;align-items:center;gap:.4rem;
+    padding:.55rem .9rem;border:1px solid #cfd6e3;border-radius:.55rem;
+    background:#fff;color:#0f172a;text-decoration:none;font-weight:600;
+    box-shadow:0 1px 0 rgba(0,0,0,.02);
+    transition:background .15s ease,border-color .15s ease;
+    cursor:pointer;
+  }
+  .link-btn:hover{background:#f3f4f6}
+  .link-btn.secondary{background:#eef2ff;border-color:#c7d2fe}
+  .link-btn.outline{background:#fff;border-color:#cfd6e3}
+
+  .week-nav,
+  .bottom-controls{
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    margin:10px 0 14px;
+  }
+
+  /* --- Table visuals (kept from your version) --- */
   .planned-table {
     width: 100%;
     border-collapse: collapse;
@@ -79,12 +93,6 @@
   }
   .planned-table tbody tr:nth-child(odd) td {
     background-color: #f9fafb;
-  }
-  .week-nav {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin: 8px 0 12px;
   }
 </style>
 {% endblock %}
