@@ -63,6 +63,17 @@ def _canonical_item_name(name: str) -> str:
     if base.endswith("s") and len(base) > 3:
         base = base[:-1]
     return base
+
+DAILY_FOCUS_MESSAGES = [
+    "Keep the kitchen running smoothly and safely for all residents.",
+    "Double-check allergies and special diets before every meal.",
+    "Communicate clearly with your team to avoid meal mix-ups.",
+    "Keep an eye on low-stock items and update inventory promptly.",
+    "Prioritize food safety: temperatures, hand hygiene, and clean prep areas.",
+    "Support new staff by answering questions and sharing best practices.",
+    "Take a moment to celebrate small wins in the kitchen today.",
+]
+
     
 def _try_entra_login():
     from models import User
@@ -264,11 +275,19 @@ def create_app():
         # send them back to login
         return redirect(url_for("login"))
 
-    # ---------- DASHBOARD ----------
+        # ---------- DASHBOARD ----------
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        return render_template("dashboard.html")
+        # Pick a focus message based on today's date so it changes every day
+        if DAILY_FOCUS_MESSAGES:
+            idx = date.today().toordinal() % len(DAILY_FOCUS_MESSAGES)
+            todays_focus = DAILY_FOCUS_MESSAGES[idx]
+        else:
+            todays_focus = "Keep the kitchen running smoothly and safely for all residents."
+
+        return render_template("dashboard.html", todays_focus=todays_focus)
+
 
        # ---------- RESIDENTS ----------
     @app.route("/residents")
