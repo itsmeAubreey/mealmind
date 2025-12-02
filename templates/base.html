@@ -219,7 +219,7 @@
       <button style="background:none;border:none;color:#fff;font-weight:bold;cursor:pointer" onclick="toggleChat()">×</button>
     </header>
     <div class="chat-body" id="chatBody">
-      <div><strong>Bot:</strong> Hi! Ask me anything.</div>
+       <div><strong>AI Kitchen Assistant:</strong> Hi! Ask me anything.</div>
     </div>
     <div class="chat-input">
       <input id="chatMsg" placeholder="Type here..." />
@@ -257,9 +257,9 @@
           body: JSON.stringify({message: text})
         });
         const data = await res.json();
-        chatBody.innerHTML += `<div><strong>Bot:</strong> ${data.reply}</div>`;
+        chatBody.innerHTML += `<div><strong>AI Kitchen Assistant:</strong> ${data.reply}</div>`;
       } catch (err) {
-        chatBody.innerHTML += `<div><strong>Bot:</strong> Server error.</div>`;
+        chatBody.innerHTML += `<div><strong>AI Kitchen Assistant:</strong> Server error.</div>`;
       }
       chatBody.scrollTop = chatBody.scrollHeight;
     }
