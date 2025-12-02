@@ -175,7 +175,29 @@ def create_app():
         if not user_message:
             return jsonify({"reply": "Please type something."})
 
-        # use the env vars you already showed in Azure
+        # ---- Build a snapshot of current menus from the database ----
+        try:
+            menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
+        except Exception:
+            menus = []
+
+        if menus:
+            menu_lines = []
+            for m in menus:
+                meal_type = (m.meal_type or "Unspecified").strip()
+                title = (m.title or "").strip()
+                desc = (m.description or "").strip()
+
+                if desc:
+                    menu_lines.append(f"- [{meal_type}] {title}: {desc}")
+                else:
+                    menu_lines.append(f"- [{meal_type}] {title}")
+
+            menus_text = "\n".join(menu_lines)
+        else:
+            menus_text = "No menus are currently saved in the database."
+
+        # ---- Azure OpenAI config (same env vars as before) ----
         endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv(
             "AZURE_OPENAI_ENDPOINT".lower()
         )
@@ -199,12 +221,24 @@ def create_app():
 
         url = f"{endpoint}openai/deployments/{deployment}/chat/completions?api-version={api_version}"
         headers = {"Content-Type": "application/json", "api-key": api_key}
+
+        # ---- System prompt that includes live menu data ----
+        system_content = (
+            "You are MealMind, a friendly helper for a kitchen / dietary management app. "
+            "You are assisting staff in a long-term care / seniors home kitchen.\n\n"
+            "The app has a Menu Builder where the team saves reusable menus.\n"
+            "Here is the current list of menus in the MealMind database:\n"
+            f"{menus_text}\n\n"
+            "When the user asks about menus (for example, what's available for breakfast, "
+            "or what menus exist), answer using ONLY this list. If something is not listed, "
+            "say you don't see it in MealMind.\n"
+            "You can also answer general questions about food safety, kitchen workflows, and "
+            "how to use the app in a practical, concise way."
+        )
+
         payload = {
             "messages": [
-                {
-                    "role": "system",
-                    "content": "You are MealMind, a friendly helper for a kitchen / dietary management app.",
-                },
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.6,
@@ -227,6 +261,7 @@ def create_app():
                 ),
                 500,
             )
+
 
     # ---------- AUTH ----------
     @app.route("/")
