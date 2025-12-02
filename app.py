@@ -161,170 +161,170 @@ def create_app():
         _try_entra_login()
         
     # ---------------- optional Azure OpenAI chat ----------------
-@app.route("/chat", methods=["POST"])
-@login_required
-def chat():
-    """
-    Tiny API endpoint called by the floating widget.
-
-    Now it gives Azure OpenAI a snapshot of:
-    - current Inventory items (name, unit, quantity, status)
-    - current Menus and their ingredients
-
-    So the assistant can suggest menus/recipes and substitutions
-    based on what is actually in MealMind.
-    """
-    try:
-        import requests
-    except ImportError:
-        return jsonify({"reply": "Server: 'requests' package not installed."}), 500
-
-    data = request.get_json(force=True) or {}
-    user_message = (data.get("message") or "").strip()
-    if not user_message:
-        return jsonify({"reply": "Please type something."})
-
-    # ---- Build inventory snapshot ----
-    try:
-        inv_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-    except Exception:
-        inv_items = []
-
-    inv_lines = []
-    for it in inv_items:
-        name = (it.name or "").strip()
-        unit = (it.unit or "").strip()
-        qty = _to_float(getattr(it, "quantity", 0.0), 0.0)
-        low_thr = _to_float(getattr(it, "low_stock_threshold", 0.0), 0.0)
-
-        if qty <= 0:
-            status = "OUT"
-        elif low_thr and qty <= low_thr:
-            status = "LOW"
-        else:
-            status = "OK"
-
-        inv_lines.append(f"- {name} ({unit}): {qty:g} [{status}]")
-
-    inventory_text = "\n".join(inv_lines) if inv_lines else "No inventory items recorded."
-
-    # ---- Build menus + ingredients snapshot ----
-    try:
-        menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
-    except Exception:
-        menus = []
-
-    menu_blocks = []
-    if menus:
-        for m in menus:
-            meal_type = (m.meal_type or "Unspecified").strip()
-            title = (m.title or "").strip()
-            desc = (m.description or "").strip()
-
-            try:
-                ings = MenuIngredient.query.filter_by(menu_id=m.id).all()
-            except Exception:
-                ings = []
-
-            ing_lines = []
-            for ing in ings:
-                inv = None
-                if getattr(ing, "inventory_id", None):
-                    inv = InventoryItem.query.get(ing.inventory_id)
-
-                ing_name = (inv.name if inv else getattr(ing, "name", "") or "").strip()
-                ing_unit = (
-                    getattr(inv, "unit", "") or getattr(ing, "unit", "") or ""
-                ).strip()
-                ing_qty = _to_float(getattr(ing, "quantity", 0.0), 0.0)
-
-                ing_lines.append(f"    - {ing_name} ({ing_unit}): {ing_qty:g}")
-
-            block = f"[{meal_type}] {title}"
-            if desc:
-                block += f" — {desc}"
-            if ing_lines:
-                block += "\n" + "\n".join(ing_lines)
-            menu_blocks.append(block)
-
-    menus_text = (
-        "\n\n".join(menu_blocks)
-        if menu_blocks
-        else "No menus are currently saved in the database."
-    )
-
-    # ---- Azure OpenAI config (env vars) ----
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv(
-        "azure_openai_endpoint"
-    )
-    api_key = (
-        os.getenv("AZURE_OPENAI_API_KEY")
-        or os.getenv("AZURE_OPENAI_KEY")
-        or os.getenv("azure_openai_key")
-    )
-    deployment = (
-        os.getenv("AZURE_OPENAI_DEPLOYMENT")
-        or os.getenv("AZURE_OPENAI_MODEL")
-        or "mealmind-chat"
-    )
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-
-    if not endpoint or not api_key:
-        return jsonify({"reply": "Azure OpenAI is not configured on the server."}), 500
-
-    if not endpoint.endswith("/"):
-        endpoint = endpoint + "/"
-
-    url = (
-        f"{endpoint}openai/deployments/{deployment}/chat/completions"
-        f"?api-version={api_version}"
-    )
-    headers = {"Content-Type": "application/json", "api-key": api_key}
-
-    # ---- System prompt combining inventory + menus ----
-    system_content = (
-        "You are MealMind, a helpful assistant for a long-term care kitchen / dietary app. "
-        "You know about the current inventory and saved menus. Use them as the source of truth.\n\n"
-        "INVENTORY (name, unit, quantity, status):\n"
-        f"{inventory_text}\n\n"
-        "MENUS (with ingredients):\n"
-        f"{menus_text}\n\n"
-        "Guidelines:\n"
-        "- When suggesting recipes or menus, only use ingredients that exist in the inventory list. "
-        "Prefer items with status 'OK'. You may still use 'LOW' items for small amounts but clearly mention that they are low. "
-        "Avoid using items with status 'OUT'.\n"
-        "- If the user is building a specific menu and some items are low/out, propose substitutions using "
-        "ingredients that appear in the inventory list and are 'OK', staying as close as possible in cooking role "
-        "(e.g., swap spinach for kale, penne for macaroni).\n"
-        "- If something is not present in inventory, say it is not currently available in MealMind.\n"
-        "- Keep answers concise and practical for busy kitchen staff."
-    )
-
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_message},
-        ],
-        "temperature": 0.6,
-        "max_tokens": 350,
-    }
-
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=20)
-        resp.raise_for_status()
-        body = resp.json()
-        reply = body["choices"][0]["message"]["content"]
-        return jsonify({"reply": reply})
-    except Exception:
-        # Don’t crash the UI if Azure is unreachable
-        return (
-            jsonify(
-                {
-                    "reply": "I couldn't reach Azure OpenAI right now, but the assistant endpoint is wired correctly."
-                }
-            ),
-            500,
+    @app.route("/chat", methods=["POST"])
+    @login_required
+    def chat():
+        """
+        Tiny API endpoint called by the floating widget.
+    
+        Now it gives Azure OpenAI a snapshot of:
+        - current Inventory items (name, unit, quantity, status)
+        - current Menus and their ingredients
+    
+        So the assistant can suggest menus/recipes and substitutions
+        based on what is actually in MealMind.
+        """
+        try:
+            import requests
+        except ImportError:
+            return jsonify({"reply": "Server: 'requests' package not installed."}), 500
+    
+        data = request.get_json(force=True) or {}
+        user_message = (data.get("message") or "").strip()
+        if not user_message:
+            return jsonify({"reply": "Please type something."})
+    
+        # ---- Build inventory snapshot ----
+        try:
+            inv_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        except Exception:
+            inv_items = []
+    
+        inv_lines = []
+        for it in inv_items:
+            name = (it.name or "").strip()
+            unit = (it.unit or "").strip()
+            qty = _to_float(getattr(it, "quantity", 0.0), 0.0)
+            low_thr = _to_float(getattr(it, "low_stock_threshold", 0.0), 0.0)
+    
+            if qty <= 0:
+                status = "OUT"
+            elif low_thr and qty <= low_thr:
+                status = "LOW"
+            else:
+                status = "OK"
+    
+            inv_lines.append(f"- {name} ({unit}): {qty:g} [{status}]")
+    
+        inventory_text = "\n".join(inv_lines) if inv_lines else "No inventory items recorded."
+    
+        # ---- Build menus + ingredients snapshot ----
+        try:
+            menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
+        except Exception:
+            menus = []
+    
+        menu_blocks = []
+        if menus:
+            for m in menus:
+                meal_type = (m.meal_type or "Unspecified").strip()
+                title = (m.title or "").strip()
+                desc = (m.description or "").strip()
+    
+                try:
+                    ings = MenuIngredient.query.filter_by(menu_id=m.id).all()
+                except Exception:
+                    ings = []
+    
+                ing_lines = []
+                for ing in ings:
+                    inv = None
+                    if getattr(ing, "inventory_id", None):
+                        inv = InventoryItem.query.get(ing.inventory_id)
+    
+                    ing_name = (inv.name if inv else getattr(ing, "name", "") or "").strip()
+                    ing_unit = (
+                        getattr(inv, "unit", "") or getattr(ing, "unit", "") or ""
+                    ).strip()
+                    ing_qty = _to_float(getattr(ing, "quantity", 0.0), 0.0)
+    
+                    ing_lines.append(f"    - {ing_name} ({ing_unit}): {ing_qty:g}")
+    
+                block = f"[{meal_type}] {title}"
+                if desc:
+                    block += f" — {desc}"
+                if ing_lines:
+                    block += "\n" + "\n".join(ing_lines)
+                menu_blocks.append(block)
+    
+        menus_text = (
+            "\n\n".join(menu_blocks)
+            if menu_blocks
+            else "No menus are currently saved in the database."
         )
+    
+        # ---- Azure OpenAI config (env vars) ----
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv(
+            "azure_openai_endpoint"
+        )
+        api_key = (
+            os.getenv("AZURE_OPENAI_API_KEY")
+            or os.getenv("AZURE_OPENAI_KEY")
+            or os.getenv("azure_openai_key")
+        )
+        deployment = (
+            os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            or os.getenv("AZURE_OPENAI_MODEL")
+            or "mealmind-chat"
+        )
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+    
+        if not endpoint or not api_key:
+            return jsonify({"reply": "Azure OpenAI is not configured on the server."}), 500
+    
+        if not endpoint.endswith("/"):
+            endpoint = endpoint + "/"
+    
+        url = (
+            f"{endpoint}openai/deployments/{deployment}/chat/completions"
+            f"?api-version={api_version}"
+        )
+        headers = {"Content-Type": "application/json", "api-key": api_key}
+    
+        # ---- System prompt combining inventory + menus ----
+        system_content = (
+            "You are MealMind, a helpful assistant for a long-term care kitchen / dietary app. "
+            "You know about the current inventory and saved menus. Use them as the source of truth.\n\n"
+            "INVENTORY (name, unit, quantity, status):\n"
+            f"{inventory_text}\n\n"
+            "MENUS (with ingredients):\n"
+            f"{menus_text}\n\n"
+            "Guidelines:\n"
+            "- When suggesting recipes or menus, only use ingredients that exist in the inventory list. "
+            "Prefer items with status 'OK'. You may still use 'LOW' items for small amounts but clearly mention that they are low. "
+            "Avoid using items with status 'OUT'.\n"
+            "- If the user is building a specific menu and some items are low/out, propose substitutions using "
+            "ingredients that appear in the inventory list and are 'OK', staying as close as possible in cooking role "
+            "(e.g., swap spinach for kale, penne for macaroni).\n"
+            "- If something is not present in inventory, say it is not currently available in MealMind.\n"
+            "- Keep answers concise and practical for busy kitchen staff."
+        )
+    
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 0.6,
+            "max_tokens": 350,
+        }
+    
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
+            resp.raise_for_status()
+            body = resp.json()
+            reply = body["choices"][0]["message"]["content"]
+            return jsonify({"reply": reply})
+        except Exception:
+            # Don’t crash the UI if Azure is unreachable
+            return (
+                jsonify(
+                    {
+                        "reply": "I couldn't reach Azure OpenAI right now, but the assistant endpoint is wired correctly."
+                    }
+                ),
+                500,
+            )
 
 
     # ---------- AUTH ----------
