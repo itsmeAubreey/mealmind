@@ -86,6 +86,30 @@
   </tbody>
 </table>
 
+{% if total_pages > 1 %}
+  <div class="pagination-container"
+       style="margin-top: 1rem; display: flex; justify-content: center; align-items: center; gap: 0.75rem;">
+    {% if page > 1 %}
+      <a href="{{ url_for('inventory_list', page=page-1, q=q, show=show) }}"
+         class="btn btn-secondary">
+        ‹ Previous
+      </a>
+    {% endif %}
+
+    <span>
+      Page {{ page }} of {{ total_pages }}
+    </span>
+
+    {% if page < total_pages %}
+      <a href="{{ url_for('inventory_list', page=page+1, q=q, show=show) }}"
+         class="btn btn-secondary">
+        Next ›
+      </a>
+    {% endif %}
+  </div>
+{% endif %}
+
+
 <div class="footer-nav">
   <a href="{{ url_for('dashboard') }}" class="btn btn-light">← Back to Dashboard</a>
 </div>
