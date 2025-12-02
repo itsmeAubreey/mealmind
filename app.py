@@ -572,12 +572,18 @@ def create_app():
     @app.route("/inventory")
     @login_required
     def inventory_list():
+        """Inventory list with search, low filter, and simple pagination."""
         q = (request.args.get("q") or "").strip()
         show = (request.args.get("show") or "all").strip()
+
+        # Which page? default = 1
+        page = request.args.get("page", 1, type=int)
+        per_page = 25  # 👈 adjust if you want more/less rows per page
 
         query = InventoryItem.query
         if q:
             query = query.filter(InventoryItem.name.ilike(f"%{q}%"))
+
         rows = query.order_by(InventoryItem.name.asc()).all()
 
         items = []
@@ -613,7 +619,29 @@ def create_app():
         if show == "low":
             items = [x for x in items if x["status"] in ("low", "out")]
 
-        return render_template("inventory_list.html", items=items, q=q, show=show)
+        # --- pagination on the Python list ---
+        total = len(items)
+        total_pages = (total + per_page - 1) // per_page if total else 1
+
+        if page < 1:
+            page = 1
+        if page > total_pages:
+            page = total_pages
+
+        start = (page - 1) * per_page
+        end = start + per_page
+        items_page = items[start:end]
+
+        return render_template(
+            "inventory_list.html",
+            items=items_page,
+            q=q,
+            show=show,
+            page=page,
+            total_pages=total_pages,
+            total=total,
+        )
+
 
     @app.route("/inventory/new", methods=["GET", "POST"])
     @login_required
