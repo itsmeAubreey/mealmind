@@ -71,6 +71,33 @@
   </tbody>
 </table>
 
+{% if total_pages > 1 %}
+  <div class="pagination-container" style="margin-top: 1rem; display: flex; justify-content: center; align-items: center; gap: 0.75rem;">
+    {% if page > 1 %}
+      <a
+        href="{{ url_for('residents_list', page=page-1, q=q) }}"
+        class="btn btn-secondary"
+      >
+        ‹ Previous
+      </a>
+    {% endif %}
+
+    <span>
+      Page {{ page }} of {{ total_pages }}
+    </span>
+
+    {% if page < total_pages %}
+      <a
+        href="{{ url_for('residents_list', page=page+1, q=q) }}"
+        class="btn btn-secondary"
+      >
+        Next ›
+      </a>
+    {% endif %}
+  </div>
+{% endif %}
+
+
 <div class="footer-actions">
   <a href="{{ url_for('dashboard') }}" class="btn btn-neutral">
     &larr; Back to Dashboard
