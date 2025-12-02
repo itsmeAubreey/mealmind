@@ -12,53 +12,51 @@
   </div>
 {% endif %}
 
-<form method="post" class="form-grid">
+<form id="staff-form" method="post" class="form-grid">
   <div class="fg">
-    <label class="form-label">First Name</label>
-    <input class="form-control" type="text" name="first_name"
-           value="{{ values.first_name | default('') }}">
+    <label class="form-label" for="first_name">First Name</label>
+    <input id="first_name" class="form-control" type="text" name="first_name"
+           value="{{ values.first_name | default('') }}" required>
   </div>
 
   <div class="fg">
-    <label class="form-label">Last Name</label>
-    <input class="form-control" type="text" name="last_name"
-           value="{{ values.last_name | default('') }}">
+    <label class="form-label" for="last_name">Last Name</label>
+    <input id="last_name" class="form-control" type="text" name="last_name"
+           value="{{ values.last_name | default('') }}" required>
   </div>
 
   <div class="fg">
-    <label class="form-label">Username</label>
-    <input class="form-control" type="text" name="username"
+    <label class="form-label" for="username">Username</label>
+    <input id="username" class="form-control" type="text" name="username"
            value="{{ values.username | default('') }}">
   </div>
 
   <div class="fg">
-    <label class="form-label">Employee ID</label>
-    <input class="form-control" type="text" name="employee_id"
+    <label class="form-label" for="employee_id">Employee ID</label>
+    <input id="employee_id" class="form-control" type="text" name="employee_id"
            value="{{ values.employee_id | default('') }}">
   </div>
 
   <div class="fg">
-    <label class="form-label">Email</label>
-    <input class="form-control" type="email" name="email"
+    <label class="form-label" for="email">Email</label>
+    <input id="email" class="form-control" type="email" name="email"
            value="{{ values.email | default('') }}">
   </div>
 
   <div class="fg">
-    <label class="form-label">Role</label>
+    <label class="form-label" for="role">Role</label>
     {% set current_role = values.role | default('Dietary Aide') %}
-    <select class="form-select" name="role">
+    <select id="role" class="form-select" name="role" required>
       {% for r in roles %}
-        <option value="{{ r }}" {{ 'selected' if r == current_role else '' }}>
-          {{ r }}
-        </option>
+        <option value="{{ r }}" {{ 'selected' if r == current_role else '' }}>{{ r }}</option>
       {% endfor %}
     </select>
   </div>
 
   {% if mode == 'new' %}
   <div class="fg fg-wide">
-    <label class="form-label">Temporary Password</label>
-    <input class="form-control" type="text" name="temp_password" value="">
+    <label class="form-label" for="temp_password">Temporary Password</label>
+    <input id="temp_password" class="form-control" type="text" name="temp_password" autocomplete="new-password">
     <div class="form-text">User will be able to change this on first login.</div>
   </div>
   {% endif %}
@@ -67,27 +65,46 @@
     <button class="btn btn-primary btn-action" type="submit">
       {{ 'Save' if mode == 'edit' else 'Create' }}
     </button>
-    <a class="btn btn-outline-secondary btn-action" href="{{ url_for('staff_list') }}">Cancel</a>
-    <a class="btn btn-link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+
+    <!-- Button-styled links for consistency -->
+    <a class="btn btn-secondary btn-action" href="{{ url_for('staff_list') }}">Cancel</a>
+    <a class="btn btn-outline btn-action" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
   </div>
 </form>
 
+{% if mode == 'edit' and values.id %}
+<form method="post"
+      action="{{ url_for('staff_delete', uid=values.id) }}"
+      onsubmit="return confirm('Delete {{ values.first_name }} {{ values.last_name }}? This cannot be undone.');"
+      style="margin-top:10px;">
+  <button class="btn btn-danger" type="submit">Delete</button>
+</form>
+{% endif %}
+
 <style>
-  .form-grid {
-    display: grid;
+  .form-grid{
+    display:grid;
     grid-template-columns: repeat(2, minmax(260px, 420px));
     gap: 1rem 1.25rem;
     max-width: 900px;
   }
-  .fg { display: flex; flex-direction: column; }
-  .fg-wide { grid-column: 1 / -1; }
-  .fg-actions {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    gap: .75rem;
-    margin-top: .25rem;
+  .fg{display:flex;flex-direction:column}
+  .fg-wide{grid-column:1 / -1}
+  .fg-actions{
+    grid-column:1 / -1;
+    display:flex;align-items:center;gap:.75rem;margin-top:.25rem
   }
-  .btn-action { min-width: 120px; }
+  .btn-action{min-width:120px}
+
+  /* Button look aligned with the rest of the app */
+  .btn{display:inline-block;padding:10px 16px;border-radius:10px;font-weight:600;text-decoration:none;cursor:pointer;border:1px solid transparent}
+  .btn-primary{background:#2563eb;color:#fff}
+  .btn-primary:hover{background:#1e4fd6}
+  .btn-secondary{background:#e5e7eb;color:#111827}
+  .btn-secondary:hover{background:#d8dbe0}
+  .btn-outline{background:#fff;border-color:#d1d5db;color:#111827}
+  .btn-outline:hover{background:#f9fafb}
+  .btn-danger{background:#ef4444;color:#fff;border:none}
+  .btn-danger:hover{background:#dc2626}
 </style>
 {% endblock %}
