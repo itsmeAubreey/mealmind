@@ -16,7 +16,7 @@ from flask import (
     Response,
     jsonify,
 )
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 # use the actual filename in your repo
 from models import (
@@ -375,6 +375,60 @@ def create_app():
             flash("Invalid credentials.", "error")
 
         return render_template("login.html")
+
+    
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password():
+        errors = []
+
+        if request.method == "POST":
+            identifier = (request.form.get("identifier") or "").strip().lower()
+            email = (request.form.get("email") or "").strip().lower()
+            new_pw = (request.form.get("password") or "").strip()
+            confirm = (request.form.get("confirm") or "").strip()
+
+            if not identifier:
+                errors.append("Username or Employee ID is required.")
+            if not email:
+                errors.append("Email is required.")
+            if not new_pw:
+                errors.append("New password is required.")
+            elif len(new_pw) < 4:
+                errors.append("Password must be at least 4 characters.")
+            if new_pw != confirm:
+                errors.append("Passwords do not match.")
+
+            user = None
+            if not errors:
+                # Find user by username or employee_id AND email
+                user = (
+                    User.query.filter(
+                        or_(
+                            User.username.ilike(identifier),
+                            User.employee_id.ilike(identifier),
+                        )
+                    )
+                    .filter(func.lower(User.email) == email)
+                    .first()
+                )
+                if not user:
+                    errors.append(
+                        "No matching account found for that username/ID and email."
+                    )
+
+            if not errors and user:
+                user.set_password(new_pw)
+                # Clear must_change_password flag if your model has it
+                if hasattr(user, "must_change_password"):
+                    user.must_change_password = False
+                db.session.commit()
+                flash("Your password has been updated. You can now sign in.", "success")
+                return redirect(url_for("login"))
+
+            for e in errors:
+                flash(e, "error")
+
+        return render_template("forgot_password.html")
 
 
     # ---------- AUTH ----------
