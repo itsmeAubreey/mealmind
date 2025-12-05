@@ -68,61 +68,17 @@
     position: relative;
     min-height: calc(100vh - 64px);
     padding: 2.5rem 2.5rem 3rem;
-    background: #f9fafb; /* plain base colour */
+    /* plain background – no gradients/blobs */
+    background: #f9fafb;
     overflow: hidden;
   }
 
   .dashboard-inner {
     position: relative;
-    z-index: 1; /* keep content above watermark */
+    z-index: 1;
     max-width: 1200px;
     margin: 0 auto;
   }
-
-   /* FISH WATERMARK LAYER – many scattered hito + one big in the middle */
-  .dashboard-page::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image:
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}"),
-      url("{{ url_for('static', filename='img/hito.png') }}");
-    background-repeat: no-repeat;
-    /* sizes: mix of big/medium/small + one extra big */
-    background-size:
-      220px,
-      160px,
-      140px,
-      180px,
-      130px,
-      120px,
-      150px,
-      110px,
-      360px;    /* big one in the middle */
-    /* positions: same as before + big centered lower on the page */
-    background-position:
-      left 3% top 80px,
-      left 15% bottom 50px,
-      center top 140px,
-      right 5% top 80px,
-      right 4% center,
-      left 4% center,
-      right 12% bottom 80px,
-      center bottom 40px,
-      center 72%;   /* big Hito in the area you circled */
-    opacity: 0.10;   /* a bit lighter since there’s a big one */
-    pointer-events: none;
-    z-index: 0;
-  }
-
-
 
   /* HERO CARD */
   .dashboard-hero {
@@ -131,7 +87,7 @@
     gap: 2rem;
     padding: 1.75rem 2rem;
     border-radius: 18px;
-    background: rgba(255, 255, 255, 0.96);
+    background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
     margin-bottom: 1.75rem;
     backdrop-filter: blur(12px);
@@ -172,6 +128,12 @@
   .hero-role span {
     font-weight: 600;
     color: #111827;
+  }
+
+  .hero-subtitle {
+    margin: 0;
+    color: #4b5563;
+    font-size: 0.95rem;
   }
 
   .hero-pill {
