@@ -3,10 +3,6 @@
 {% block content %}
 <div class="dashboard-page">
 
-  <!-- soft gradient background shapes -->
-  <div class="dashboard-bg-shape dashboard-bg-shape--1"></div>
-  <div class="dashboard-bg-shape dashboard-bg-shape--2"></div>
-
   <div class="dashboard-inner">
 
     <!-- HERO / WELCOME CARD -->
@@ -19,8 +15,8 @@
         <p class="hero-role">
           Role: <span>{{ user.role }}</span>
         </p>
-      
       </div>
+
       <div class="dashboard-hero-side">
         <div class="hero-pill">
           <span class="hero-pill-dot"></span>
@@ -29,7 +25,6 @@
         <p class="hero-side-text">
           Today’s focus: {{ todays_focus }}
         </p>
-
       </div>
     </section>
 
@@ -73,31 +68,9 @@
     position: relative;
     min-height: calc(100vh - 64px);
     padding: 2.5rem 2.5rem 3rem;
-    background: radial-gradient(circle at top left, #eef2ff 0, #f9fafb 40%, #ecfdf5 80%);
+    /* plain background – no gradients/blobs */
+    background: #f9fafb;
     overflow: hidden;
-  }
-
-  /* subtle blurred blobs in the background */
-  .dashboard-bg-shape {
-    position: absolute;
-    filter: blur(48px);
-    opacity: 0.65;
-    pointer-events: none;
-    z-index: 0;
-  }
-  .dashboard-bg-shape--1 {
-    width: 320px;
-    height: 320px;
-    top: -80px;
-    right: -60px;
-    background: linear-gradient(135deg, #38bdf8, #a855f7);
-  }
-  .dashboard-bg-shape--2 {
-    width: 260px;
-    height: 260px;
-    bottom: -60px;
-    left: -40px;
-    background: linear-gradient(135deg, #22c55e, #f97316);
   }
 
   .dashboard-inner {
@@ -202,7 +175,7 @@
     flex-wrap: wrap;
   }
 
-  /* TILES (kept from your original design, slightly tweaked) */
+  /* TILES */
   .tile {
     flex: 1 1 220px;
     min-height: 140px;
