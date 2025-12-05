@@ -134,6 +134,9 @@ def create_app():
                 email="manager@example.com",
                 role="Manager",
             )
+              # If the model has a must_change_password flag, force a change
+            if hasattr(u, "must_change_password"):
+                u.must_change_password = True
             u.set_password("1234")
             db.session.add(u)
             db.session.commit()
@@ -349,9 +352,11 @@ def create_app():
                 try:
                     ok = user.check_password(password)
                 except Exception:
+                    # legacy plain-text fallback if needed
                     ok = user.password == password
 
             if user and ok:
+                # Store basic info in session
                 session["user"] = {
                     "id": user.id,
                     "username": user.username,
@@ -359,11 +364,18 @@ def create_app():
                     "first_name": user.first_name or "",
                     "last_name": user.last_name or "",
                 }
+
+                # If flagged, force password change first
+                must_change = getattr(user, "must_change_password", False)
+                if must_change:
+                    return redirect(url_for("change_password"))
+
                 return redirect(url_for("dashboard"))
 
             flash("Invalid credentials.", "error")
 
         return render_template("login.html")
+
 
     # ---------- AUTH ----------
     @app.route("/logout")
@@ -373,6 +385,33 @@ def create_app():
         session.clear()
         # send them back to login
         return redirect(url_for("login"))
+
+    # ---------- CHANGE PASSWORD ----------
+    @app.route("/change-password", methods=["GET", "POST"])
+    @login_required
+    def change_password():
+        # get current logged-in user from the session
+        uid = session["user"]["id"]
+        u = User.query.get_or_404(uid)
+
+        if request.method == "POST":
+            pw = (request.form.get("password") or "").strip()
+
+            if not pw:
+                flash("Password is required.", "error")
+            elif len(pw) < 4:
+                flash("Password must be at least 4 characters.", "error")
+            else:
+                u.set_password(pw)
+                # Clear the must-change flag if present
+                if hasattr(u, "must_change_password"):
+                    u.must_change_password = False
+                db.session.commit()
+                flash("Password updated.", "success")
+                return redirect(url_for("dashboard"))
+
+        # Reuse the same template as staff password reset
+        return render_template("reset.html", user=u)
 
         # ---------- DASHBOARD ----------
     @app.route("/dashboard")
@@ -590,11 +629,17 @@ def create_app():
                     last_name=values["last_name"],
                     role=values["role"],
                 )
+
+                # New staff must change this temp password after first login
+                if hasattr(u, "must_change_password"):
+                    u.must_change_password = True
+
                 u.set_password(temp_password)
                 db.session.add(u)
                 db.session.commit()
                 flash("Staff added.", "success")
                 return redirect(url_for("staff_list"))
+
 
         return render_template(
             "staff_form.html", mode="new", values=values, errors=errors, roles=roles
@@ -652,10 +697,16 @@ def create_app():
         if request.method == "POST":
             pw = request.form.get("password") or "1234"
             u.set_password(pw)
+
+            # After an admin reset, force a change on next login
+            if hasattr(u, "must_change_password"):
+                u.must_change_password = True
+
             db.session.commit()
             flash("Password reset.", "success")
             return redirect(url_for("staff_list"))
         return render_template("reset.html", user=u)
+
 
     @app.route("/staff/<int:uid>/delete", methods=["POST"])
     @login_required
