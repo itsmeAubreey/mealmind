@@ -79,7 +79,7 @@
     margin: 0 auto;
   }
 
-  /* FISH WATERMARK LAYER – many scattered hito */
+   /* FISH WATERMARK LAYER – many scattered hito + one big in the middle */
   .dashboard-page::before {
     content: "";
     position: absolute;
@@ -92,9 +92,10 @@
       url("{{ url_for('static', filename='img/hito.png') }}"),
       url("{{ url_for('static', filename='img/hito.png') }}"),
       url("{{ url_for('static', filename='img/hito.png') }}"),
+      url("{{ url_for('static', filename='img/hito.png') }}"),
       url("{{ url_for('static', filename='img/hito.png') }}");
     background-repeat: no-repeat;
-    /* sizes: mix of big/medium/small */
+    /* sizes: mix of big/medium/small + one extra big */
     background-size:
       220px,
       160px,
@@ -103,21 +104,24 @@
       130px,
       120px,
       150px,
-      110px;
-    /* positions chosen so they sit mostly around the edges, not under the hero card */
+      110px,
+      360px;    /* big one in the middle */
+    /* positions: same as before + big centered lower on the page */
     background-position:
-      left 3% top 80px,        /* top-left */
-      left 15% bottom 50px,    /* bottom-left-ish */
-      center top 140px,        /* above tiles */
-      right 5% top 80px,       /* top-right */
-      right 4% center,         /* mid-right */
-      left 4% center,          /* mid-left */
-      right 12% bottom 80px,   /* bottom-right-ish */
-      center bottom 40px;      /* bottom-centre */
-    opacity: 0.12;             /* very light (~12%) */
-    pointer-events: none;      /* don’t block clicks */
+      left 3% top 80px,
+      left 15% bottom 50px,
+      center top 140px,
+      right 5% top 80px,
+      right 4% center,
+      left 4% center,
+      right 12% bottom 80px,
+      center bottom 40px,
+      center 72%;   /* big Hito in the area you circled */
+    opacity: 0.10;   /* a bit lighter since there’s a big one */
+    pointer-events: none;
     z-index: 0;
   }
+
 
 
   /* HERO CARD */
