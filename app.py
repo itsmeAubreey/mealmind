@@ -298,20 +298,6 @@ def create_app():
         return jsonify({"reply": reply})
 
 
-
-        
-        except Exception:
-            # Don’t crash the UI if Azure is unreachable
-            return (
-                jsonify(
-                    {
-                        "reply": "I couldn't reach Azure OpenAI right now, "
-                        "but the AI Kitchen Assistant endpoint is wired correctly."
-                    }
-                ),
-                500,
-            )
-
     # ---------- AUTH ----------
     @app.route("/")
     def home():
