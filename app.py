@@ -50,6 +50,7 @@ def _to_float(val, default=0.0):
     except Exception:
         return default
 
+
 def _canonical_item_name(name: str) -> str:
     """
     Normalize an inventory item name so we can catch near-duplicates
@@ -64,6 +65,7 @@ def _canonical_item_name(name: str) -> str:
         base = base[:-1]
     return base
 
+
 DAILY_FOCUS_MESSAGES = [
     "Keep the kitchen running smoothly and safely for all residents.",
     "Double-check allergies and special diets before every meal.",
@@ -74,9 +76,10 @@ DAILY_FOCUS_MESSAGES = [
     "Take a moment to celebrate small wins in the kitchen today.",
 ]
 
-    
+
 def _try_entra_login():
     from models import User
+
     if not current_app.config.get("USE_ENTRA_ID"):
         return
 
@@ -134,7 +137,7 @@ def create_app():
                 email="manager@example.com",
                 role="Manager",
             )
-              # If the model has a must_change_password flag, force a change
+            # If the model has a must_change_password flag, force a change
             if hasattr(u, "must_change_password"):
                 u.must_change_password = True
             u.set_password("1234")
@@ -162,8 +165,7 @@ def create_app():
     @app.before_request
     def sync_entra_user():
         _try_entra_login()
-        
-    # ---------------- optional Azure OpenAI chat ----------------
+
     # ---------------- optional Azure OpenAI chat ----------------
     @app.route("/chat", methods=["POST"])
     @login_required
@@ -171,9 +173,10 @@ def create_app():
         """
         Tiny API endpoint called by the floating widget.
 
-        Now it gives Azure OpenAI a snapshot of:
+        It gives Azure OpenAI a snapshot of:
         - current Inventory items (name, unit, quantity, status)
         - current Residents with diet, fluids, allergies, illnesses, meds
+        - current Menus and their ingredients (mapped to inventory)
 
         So the assistant can suggest meals that respect allergies/diets
         and use what is actually in MealMind.
@@ -226,7 +229,6 @@ def create_app():
 
         res_lines = []
         for r in res_rows:
-            # age_from_date is already defined earlier in create_app()
             age_val = age_from_date(r.birthday)
             age_text = f"{age_val} years old" if age_val != "" else "age unknown"
             meds = (r.medications or "None").strip()
@@ -244,6 +246,37 @@ def create_app():
 
         residents_text = (
             "\n".join(res_lines) if res_lines else "No residents have been added yet."
+        )
+
+        # --------- Build menus snapshot ---------
+        try:
+            menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
+        except Exception:
+            menus = []
+
+        menu_lines = []
+        for m in menus:
+            ings = MenuIngredient.query.filter_by(menu_id=m.id).all()
+            if not ings:
+                menu_lines.append(f"- {m.meal_type}: {m.title} (no ingredients listed)")
+                continue
+
+            ing_parts = []
+            for ing in ings:
+                inv = getattr(ing, "inventory_item", None)
+                if not inv and getattr(ing, "inventory_id", None):
+                    inv = InventoryItem.query.get(ing.inventory_id)
+                name = inv.name if inv else f"Item {ing.inventory_id}"
+                qty = _to_float(getattr(ing, "quantity", 0.0), 0.0)
+                unit = (getattr(inv, "unit", "") or "").strip()
+                ing_parts.append(f"{name} {qty:g} {unit}".strip())
+
+            menu_lines.append(
+                f"- {m.meal_type}: {m.title} – ingredients: " + ", ".join(ing_parts)
+            )
+
+        menu_text = (
+            "\n".join(menu_lines) if menu_lines else "No menus have been created yet."
         )
 
         # --------- Azure OpenAI config (env vars) ---------
@@ -276,7 +309,7 @@ def create_app():
         )
         headers = {"Content-Type": "application/json", "api-key": api_key}
 
-        # --------- System prompt combining inventory + residents ---------
+        # --------- System prompt combining inventory + residents + menus ---------
         system_content = f"""
 You are the AI Kitchen Assistant for MealMind, a long-term care kitchen / dietary app.
 
@@ -284,6 +317,8 @@ You have READ-ONLY access to:
 - The current inventory list (name, quantity, unit, low/ok/out status).
 - The list of residents with their age, diet, fluids, allergies, illnesses,
   and medications/vitamins.
+- The list of reusable menus (Breakfast/Lunch/Dinner) and their ingredients
+  mapped to inventory items.
 
 Use this information when you answer.
 
@@ -292,45 +327,51 @@ Rules:
   and Fluids fields and NEVER include ingredients that appear in their allergy list.
 - When suggesting a menu for everyone, try to avoid ingredients that conflict with
   ANY resident's allergies.
-- Prefer recipes that can be made from items that are currently in inventory.
-- If the user suggests a menu that would conflict with a resident's allergies,
-  clearly explain who is affected and propose safer alternatives.
+- Prefer recipes and menu suggestions that can be made from items that are currently
+  in inventory.
+- When talking about existing menus, prefer using the menus shown below and their
+  ingredients instead of inventing completely new ones, unless the user asks for
+  new ideas.
+- If the user suggests or selects a menu that would conflict with a resident's
+  allergies, clearly explain who is affected and propose safer alternatives based
+  on available inventory items.
 
 INVENTORY (name, unit, quantity, status):
 {inventory_text}
 
 RESIDENTS:
 {residents_text}
+
+MENUS AND INGREDIENTS:
+{menu_text}
 """.strip()
 
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_message},
-        ],
-        "temperature": 0.6,
-        "max_tokens": 350,
-    }
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 0.6,
+            "max_tokens": 350,
+        }
 
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=20)
-        resp.raise_for_status()
-        body = resp.json()
-        reply = body["choices"][0]["message"]["content"]
-        return jsonify({"reply": reply})
-    except Exception:
-        # Don’t crash the UI if Azure is unreachable
-        return (
-            jsonify(
-                {
-                    "reply": "I couldn't reach Azure OpenAI right now, "
-                    "but the AI Kitchen Assistant endpoint is wired correctly."
-                }
-            ),
-            500,
-        )
-
-
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
+            resp.raise_for_status()
+            body = resp.json()
+            reply = body["choices"][0]["message"]["content"]
+            return jsonify({"reply": reply})
+        except Exception:
+            # Don’t crash the UI if Azure is unreachable
+            return (
+                jsonify(
+                    {
+                        "reply": "I couldn't reach Azure OpenAI right now, "
+                        "but the AI Kitchen Assistant endpoint is wired correctly."
+                    }
+                ),
+                500,
+            )
 
     # ---------- AUTH ----------
     @app.route("/")
@@ -378,7 +419,6 @@ RESIDENTS:
 
         return render_template("login.html")
 
-    
     @app.route("/forgot-password", methods=["GET", "POST"])
     def forgot_password():
         errors = []
@@ -432,8 +472,6 @@ RESIDENTS:
 
         return render_template("forgot_password.html")
 
-
-    # ---------- AUTH ----------
     @app.route("/logout")
     @login_required
     def logout():
@@ -469,7 +507,7 @@ RESIDENTS:
         # Reuse the same template as staff password reset
         return render_template("reset.html", user=u)
 
-        # ---------- DASHBOARD ----------
+    # ---------- DASHBOARD ----------
     @app.route("/dashboard")
     @login_required
     def dashboard():
@@ -482,8 +520,7 @@ RESIDENTS:
 
         return render_template("dashboard.html", todays_focus=todays_focus)
 
-
-       # ---------- RESIDENTS ----------
+    # ---------- RESIDENTS ----------
     @app.route("/residents")
     @login_required
     def residents_list():
@@ -492,7 +529,7 @@ RESIDENTS:
 
         # Which page are we on? Default = 1
         page = request.args.get("page", 1, type=int)
-        per_page = 15  # 👈 change this number if you want more/less rows per page
+        per_page = 15  # change this if you want more/less rows per page
 
         query = Resident.query
 
@@ -507,13 +544,10 @@ RESIDENTS:
                 )
             )
 
-        # Always apply ordering *before* pagination
         query = query.order_by(Resident.last_name, Resident.first_name)
 
-        # How many rows total?
         total = query.count()
 
-        # Keep page in a valid range
         if page < 1:
             page = 1
 
@@ -522,12 +556,8 @@ RESIDENTS:
         if page > total_pages:
             page = total_pages
 
-        # Apply offset/limit for this page
         residents = (
-            query
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all()
+            query.offset((page - 1) * per_page).limit(per_page).all()
         )
 
         return render_template(
@@ -538,7 +568,6 @@ RESIDENTS:
             total_pages=total_pages,
             total=total,
         )
-
 
     @app.route("/residents/new", methods=["GET", "POST"])
     @login_required
@@ -607,7 +636,7 @@ RESIDENTS:
         return render_template(
             "resident_print.html",
             resident=r,
-            r=r,       # template uses {{ r... }}
+            r=r,
             auto=auto,
         )
 
@@ -696,7 +725,6 @@ RESIDENTS:
                 flash("Staff added.", "success")
                 return redirect(url_for("staff_list"))
 
-
         return render_template(
             "staff_form.html", mode="new", values=values, errors=errors, roles=roles
         )
@@ -763,7 +791,6 @@ RESIDENTS:
             return redirect(url_for("staff_list"))
         return render_template("reset.html", user=u)
 
-
     @app.route("/staff/<int:uid>/delete", methods=["POST"])
     @login_required
     def staff_delete(uid):
@@ -772,8 +799,7 @@ RESIDENTS:
         db.session.commit()
         flash("Staff deleted.", "success")
         return redirect(url_for("staff_list"))
-  
-    
+
     # ---------- INVENTORY ----------
     @app.route("/inventory")
     @login_required
@@ -782,9 +808,8 @@ RESIDENTS:
         q = (request.args.get("q") or "").strip()
         show = (request.args.get("show") or "all").strip()
 
-        # Which page? default = 1
         page = request.args.get("page", 1, type=int)
-        per_page = 20  # 👈 adjust if you want more/less rows per page
+        per_page = 20
 
         query = InventoryItem.query
         if q:
@@ -797,7 +822,6 @@ RESIDENTS:
             qty = it.quantity or 0.0
             thr = it.low_stock_threshold or 0.0
 
-            # OUT OF STOCK vs LOW vs OK
             is_out = qty <= 0
             if it.low_stock_threshold is not None:
                 is_low = (qty > 0) and (qty <= thr)
@@ -821,11 +845,9 @@ RESIDENTS:
                 }
             )
 
-        # “Low” filter shows both LOW and OUT OF STOCK
         if show == "low":
             items = [x for x in items if x["status"] in ("low", "out")]
 
-        # --- pagination on the Python list ---
         total = len(items)
         total_pages = (total + per_page - 1) // per_page if total else 1
 
@@ -848,11 +870,28 @@ RESIDENTS:
             total=total,
         )
 
-
     @app.route("/inventory/new", methods=["GET", "POST"])
     @login_required
     def inventory_new():
-        units = ["pcs", "kg", "g", "L", "mL", "pack", "bags", "cases", "dozen", "cans", "jugs", "bunches", "heads", "loaves", "bottles", "jars", "boxes",]
+        units = [
+            "pcs",
+            "kg",
+            "g",
+            "L",
+            "mL",
+            "pack",
+            "bags",
+            "cases",
+            "dozen",
+            "cans",
+            "jugs",
+            "bunches",
+            "heads",
+            "loaves",
+            "bottles",
+            "jars",
+            "boxes",
+        ]
         errors = []
         values = {}
 
@@ -872,7 +911,6 @@ RESIDENTS:
             if not raw_name:
                 errors.append("Item name is required.")
 
-            # Check for near-duplicate names (carrot vs carrots, case, spaces)
             conflict = None
             canon_new = _canonical_item_name(raw_name)
             if canon_new:
@@ -914,7 +952,25 @@ RESIDENTS:
     @login_required
     def inventory_edit(iid):
         it = InventoryItem.query.get_or_404(iid)
-        units = ["pcs", "kg", "g", "L", "mL", "pack", "bags", "cases", "dozen", "cans", "jugs", "bunches", "heads", "loaves", "bottles", "jars", "boxes"]
+        units = [
+            "pcs",
+            "kg",
+            "g",
+            "L",
+            "mL",
+            "pack",
+            "bags",
+            "cases",
+            "dozen",
+            "cans",
+            "jugs",
+            "bunches",
+            "heads",
+            "loaves",
+            "bottles",
+            "jars",
+            "boxes",
+        ]
         if request.method == "POST":
             it.name = request.form.get("name") or it.name
             it.unit = request.form.get("unit") or it.unit
@@ -989,9 +1045,7 @@ RESIDENTS:
             headers={"Content-Disposition": "attachment; filename=inventory.csv"},
         )
 
-
-        # ---------- MENU ----------
-
+    # ---------- MENU ----------
     def _menu_common_context(current_menu=None, editing=False, values=None, errors=None):
         """Shared context builder for menu_builder.html."""
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
@@ -1011,7 +1065,6 @@ RESIDENTS:
         return render_template("menu_hub.html")
 
     # ---------------- MENU BUILDER: CREATE ----------------
-
     @app.route("/menu/builder", methods=["GET", "POST"])
     @login_required
     def menu_builder():
@@ -1059,7 +1112,6 @@ RESIDENTS:
             if not rows:
                 errors.append("Add at least one ingredient with quantity > 0.")
 
-            # Check inventory availability
             insufficient = []
             if not errors and rows:
                 inv_ids = [inv_id for inv_id, _ in rows]
@@ -1069,7 +1121,9 @@ RESIDENTS:
                 inv_map = {i.id: i for i in inv_items}
                 for inv_id, qty in rows:
                     inv = inv_map.get(inv_id)
-                    available = _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    available = (
+                        _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    )
                     if inv is None or qty > available:
                         name = inv.name if inv else f"Item {inv_id}"
                         unit = getattr(inv, "unit", "") or ""
@@ -1102,7 +1156,6 @@ RESIDENTS:
 
                 db.session.commit()
                 flash("Menu created.", "success")
-                # ✅ Go back to a blank form after successful save
                 return redirect(url_for("menu_builder"))
 
         ctx = _menu_common_context(
@@ -1111,7 +1164,6 @@ RESIDENTS:
         return render_template("menu_builder.html", **ctx)
 
     # ---------------- MENU BUILDER: EDIT ----------------
-
     @app.route("/menu/builder/<int:menu_id>/edit", methods=["GET", "POST"])
     @login_required
     def menu_builder_edit(menu_id):
@@ -1155,7 +1207,6 @@ RESIDENTS:
             if not rows:
                 errors.append("Add at least one ingredient with quantity > 0.")
 
-            # Check inventory availability
             insufficient = []
             if not errors and rows:
                 inv_ids = [inv_id for inv_id, _ in rows]
@@ -1165,7 +1216,9 @@ RESIDENTS:
                 inv_map = {i.id: i for i in inv_items}
                 for inv_id, qty in rows:
                     inv = inv_map.get(inv_id)
-                    available = _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    available = (
+                        _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    )
                     if inv is None or qty > available:
                         name = inv.name if inv else f"Item {inv_id}"
                         unit = getattr(inv, "unit", "") or ""
@@ -1207,7 +1260,6 @@ RESIDENTS:
         return render_template("menu_builder.html", **ctx)
 
     # ---------------- MENU BUILDER: DELETE ----------------
-
     @app.route("/menu/builder/<int:menu_id>/delete", methods=["POST"])
     @login_required
     def menu_builder_delete(menu_id):
@@ -1219,7 +1271,6 @@ RESIDENTS:
         return redirect(url_for("menu_builder"))
 
     # ---------------- DAILY MENU (PLACEHOLDERS) ----------------
-
     @app.route("/menu/daily")
     @login_required
     def menu_daily():
@@ -1233,7 +1284,6 @@ RESIDENTS:
         return render_template("menu_daily_view.html", inventory_items=inventory_items)
 
     # ---------------- API: MENU ITEMS FOR SCHEDULER ----------------
-
     @app.route("/api/menu/<int:menu_id>/items")
     @login_required
     def api_menu_items(menu_id):
@@ -1264,18 +1314,10 @@ RESIDENTS:
         return jsonify({"menu_id": menu.id, "title": menu.title, "items": items})
 
     # ---------------- MENU SCHEDULER (DAILY) ----------------
-
     @app.route("/menu/scheduler", methods=["GET", "POST"])
     @login_required
     def menu_scheduler():
-        """Schedule menus for a single day and deduct inventory.
-
-        - On POST:
-            * Validate there is at least one menu.
-            * Calculate total ingredient usage across Breakfast/Lunch/Dinner.
-            * If any ingredient would go below zero, abort and show errors.
-            * Otherwise, deduct from Inventory and save MenuSchedule rows.
-        """
+        """Schedule menus for a single day and deduct inventory."""
         errors = []
 
         if request.method == "POST":
@@ -1297,7 +1339,6 @@ RESIDENTS:
             if not chosen:
                 errors.append("Select at least one menu before saving.")
 
-            # Build inventory usage map
             totals = {}
             menu_cache = {}
             if not errors:
@@ -1331,7 +1372,9 @@ RESIDENTS:
                 inv_map = {i.id: i for i in inv_items}
                 for inv_id, needed in totals.items():
                     inv = inv_map.get(inv_id)
-                    available = _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    available = (
+                        _to_float(getattr(inv, "quantity", 0.0), 0.0) if inv else 0.0
+                    )
                     if inv is None or needed > available:
                         name = inv.name if inv else f"Item {inv_id}"
                         unit = getattr(inv, "unit", "") or ""
@@ -1350,14 +1393,12 @@ RESIDENTS:
                     )
 
             if not errors:
-                # ✅ Deduct inventory
                 for inv_id, needed in totals.items():
                     inv = inv_map.get(inv_id)
                     if not inv:
                         continue
                     inv.quantity = _to_float(inv.quantity, 0.0) - needed
 
-                # Replace existing schedules for that date
                 MenuSchedule.query.filter_by(date=target_date).delete()
                 for meal, menu_id in chosen.items():
                     ms = MenuSchedule(
@@ -1372,7 +1413,6 @@ RESIDENTS:
                 flash("Menu schedule saved and inventory deducted.", "success")
                 return redirect(url_for("menu_scheduler", date=target_date.isoformat()))
 
-        # GET or POST with errors: show scheduler
         date_str = request.args.get("date") or ""
         target_date = _parse_date(date_str) or date.today()
         date_value = target_date.isoformat()
@@ -1396,7 +1436,6 @@ RESIDENTS:
         )
 
     # ---------------- WEEKLY PLANNED MENUS (READ-ONLY) ----------------
-
     @app.route("/menu/planned")
     @login_required
     def planned_menus():
@@ -1409,11 +1448,7 @@ RESIDENTS:
     def planned_menu_week():
         """
         Weekly read-only view of planned menus.
-
-        Builds a structure:
-        grouped[date][meal_type] = [menu_title, menu_title, ...]
-        so the template can simply print the titles instead of dealing
-        with ORM relationships.
+        grouped[date][meal_type] = [menu_title, ...]
         """
         base_str = request.args.get("base")
         if base_str:
@@ -1425,7 +1460,6 @@ RESIDENTS:
         week_start = monday
         week_end = week_start + timedelta(days=6)
 
-        # All schedules in this week
         schedules = (
             MenuSchedule.query.filter(
                 MenuSchedule.date >= week_start, MenuSchedule.date <= week_end
@@ -1434,7 +1468,6 @@ RESIDENTS:
             .all()
         )
 
-        # Look up all menu titles in one go
         menu_ids = {
             getattr(s, "menu_id", None)
             for s in schedules
@@ -1443,7 +1476,6 @@ RESIDENTS:
         menus = Menu.query.filter(Menu.id.in_(menu_ids)).all() if menu_ids else []
         menu_map = {m.id: m.title for m in menus}
 
-        # grouped[date][meal_type] = [ "sample1", "sample2", ... ]
         grouped = {}
         for s in schedules:
             day_bucket = grouped.setdefault(s.date, {})
@@ -1456,7 +1488,6 @@ RESIDENTS:
 
             meal_bucket.append(title)
 
-        # 7 days starting Monday
         days = [{"date": week_start + timedelta(days=i)} for i in range(7)]
 
         prev_url = url_for(
@@ -1476,16 +1507,11 @@ RESIDENTS:
             next_url=next_url,
         )
 
-   
-
     @app.route("/menu/planned/view")
     @login_required
     def planned_menu_view():
         return render_template("planned_menu_view.html")
 
-
-
-    
     # ---------- health ----------
     @app.route("/healthz")
     def healthz():
