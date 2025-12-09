@@ -277,58 +277,58 @@ def create_app():
         headers = {"Content-Type": "application/json", "api-key": api_key}
 
         # --------- System prompt combining inventory + residents ---------
-            system_content = f"""
-    You are the AI Kitchen Assistant for MealMind, a long-term care kitchen / dietary app.
-    
-    You have READ-ONLY access to:
-    - The current inventory list (name, quantity, unit, low/ok/out status).
-    - The list of residents with their age, diet, fluids, allergies, illnesses,
-      and medications/vitamins.
-    
-    Use this information when you answer.
-    
-    Rules:
-    - When suggesting meals for a specific resident, ALWAYS respect that resident's Diet
-      and Fluids fields and NEVER include ingredients that appear in their allergy list.
-    - When suggesting a menu for everyone, try to avoid ingredients that conflict with
-      ANY resident's allergies.
-    - Prefer recipes that can be made from items that are currently in inventory.
-    - If the user suggests a menu that would conflict with a resident's allergies,
-      clearly explain who is affected and propose safer alternatives.
-    
-    INVENTORY (name, unit, quantity, status):
-    {inventory_text}
-    
-    RESIDENTS:
-    {residents_text}
-    """.strip()
+        system_content = f"""
+You are the AI Kitchen Assistant for MealMind, a long-term care kitchen / dietary app.
 
-        payload = {
-            "messages": [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.6,
-            "max_tokens": 350,
-        }
+You have READ-ONLY access to:
+- The current inventory list (name, quantity, unit, low/ok/out status).
+- The list of residents with their age, diet, fluids, allergies, illnesses,
+  and medications/vitamins.
 
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=20)
-            resp.raise_for_status()
-            body = resp.json()
-            reply = body["choices"][0]["message"]["content"]
-            return jsonify({"reply": reply})
-        except Exception:
-            # Don’t crash the UI if Azure is unreachable
-            return (
-                jsonify(
-                    {
-                        "reply": "I couldn't reach Azure OpenAI right now, "
-                        "but the AI Kitchen Assistant endpoint is wired correctly."
-                    }
-                ),
-                500,
-            )
+Use this information when you answer.
+
+Rules:
+- When suggesting meals for a specific resident, ALWAYS respect that resident's Diet
+  and Fluids fields and NEVER include ingredients that appear in their allergy list.
+- When suggesting a menu for everyone, try to avoid ingredients that conflict with
+  ANY resident's allergies.
+- Prefer recipes that can be made from items that are currently in inventory.
+- If the user suggests a menu that would conflict with a resident's allergies,
+  clearly explain who is affected and propose safer alternatives.
+
+INVENTORY (name, unit, quantity, status):
+{inventory_text}
+
+RESIDENTS:
+{residents_text}
+""".strip()
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_message},
+        ],
+        "temperature": 0.6,
+        "max_tokens": 350,
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+        resp.raise_for_status()
+        body = resp.json()
+        reply = body["choices"][0]["message"]["content"]
+        return jsonify({"reply": reply})
+    except Exception:
+        # Don’t crash the UI if Azure is unreachable
+        return (
+            jsonify(
+                {
+                    "reply": "I couldn't reach Azure OpenAI right now, "
+                    "but the AI Kitchen Assistant endpoint is wired correctly."
+                }
+            ),
+            500,
+        )
 
 
 
