@@ -15,6 +15,12 @@
       --mm-accent: #2563eb;
       --mm-accent-warm: #f97316;
       --mm-radius: 0.5rem;
+
+      /* chat widget palette */
+      --mm-chat-blue: #1e88e5;
+      --mm-chat-blue-light: #e3f2fd;
+      --mm-chat-gray: #f5f5f7;
+      --mm-chat-border: #d8dde6;
     }
 
     * {
@@ -123,86 +129,212 @@
       border-left: 4px solid #3b82f6;
     }
 
-    /* floating chat bubble */
-    .chat-bubble {
+    /* === AI Kitchen Assistant widget === */
+
+    /* Floating round launcher */
+    #mm-chat-launcher {
       position: fixed;
-      bottom: 1.2rem;
-      right: 1.2rem;
-      width: 54px;
-      height: 54px;
-      background: var(--mm-accent);
-      border-radius: 9999px;
+      bottom: 22px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--mm-chat-blue);
+      color: #fff;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 26px;
       cursor: pointer;
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
-      color: #fff;
-      font-size: 1.6rem;
-      z-index: 999;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+      z-index: 9998;
     }
 
-    .chat-panel {
+    #mm-chat-launcher:hover {
+      transform: translateY(-1px);
+    }
+
+    /* Main chat panel */
+    #mm-chat-panel {
       position: fixed;
-      bottom: 5rem;
-      right: 1.2rem;
-      width: 280px;
-      background: #fff;
-      border-radius: 0.75rem;
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
-      display: none;
+      bottom: 92px;
+      right: 24px;
+      width: 360px;          /* bigger width */
+      height: 460px;         /* bigger height */
+      max-height: 75vh;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.35);
+      display: flex;
       flex-direction: column;
       overflow: hidden;
-      z-index: 999;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;       /* slightly larger font */
+      z-index: 9999;
     }
 
-    .chat-panel header {
-      background: var(--mm-accent);
-      color: #fff;
-      padding: 0.5rem 0.75rem;
-      font-weight: 600;
+    #mm-chat-panel.mm-chat-closed {
+      display: none;
+    }
+
+    .mm-chat-header {
+      background: var(--mm-chat-blue);
+      color: #ffffff;
+      padding: 10px 14px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      font-size: 0.9rem;
+      justify-content: space-between;
     }
 
-    .chat-body {
-      padding: 0.5rem;
-      max-height: 220px;
-      overflow-y: auto;
-      font-size: 0.85rem;
-      background: #f9fafb;
-    }
-
-    .chat-input {
+    .mm-chat-header-left {
       display: flex;
-      gap: 0.25rem;
-      padding: 0.5rem;
-      border-top: 1px solid #e2e8f0;
-      background: #fff;
+      align-items: center;
+      gap: 8px;
     }
 
-    .chat-input input {
-      flex: 1;
-      border: 1px solid #cbd5f5;
-      border-radius: 0.35rem;
-      padding: 0.25rem 0.4rem;
-      font-size: 0.85rem;
+    .mm-chat-avatar-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
     }
 
-    .chat-input button {
+    .mm-chat-title {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mm-chat-title-main {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .mm-chat-title-sub {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .mm-chat-close {
       border: none;
-      background: var(--mm-accent);
-      color: #fff;
-      border-radius: 0.35rem;
-      padding: 0.25rem 0.6rem;
+      background: transparent;
+      color: #ffffff;
+      font-size: 16px;
       cursor: pointer;
-      font-size: 0.85rem;
+      padding: 0 4px;
     }
 
-    .chat-input button:hover {
-      filter: brightness(1.05);
+    .mm-chat-body {
+      flex: 1;
+      padding: 12px 12px 4px;
+      background: #f3f5fb;
+      overflow-y: auto;
+    }
+
+    .mm-chat-body::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .mm-chat-body::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.6);
+      border-radius: 3px;
+    }
+
+    .mm-msg-row {
+      display: flex;
+      margin-bottom: 10px;
+    }
+
+    .mm-msg-row-bot {
+      justify-content: flex-start;
+    }
+
+    .mm-msg-row-user {
+      justify-content: flex-end;
+    }
+
+    .mm-msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--mm-chat-blue-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+
+    .mm-msg-row-user .mm-msg-avatar {
+      display: none; /* hide avatar on user side for cleaner look */
+    }
+
+    .mm-msg-bubble {
+      max-width: 75%;
+      padding: 8px 11px;
+      border-radius: 16px;
+      line-height: 1.4;
+      word-wrap: break-word;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+    }
+
+    .mm-msg-bot {
+      background: #ffffff;
+      border: 1px solid var(--mm-chat-border);
+      color: #111827;
+      border-bottom-left-radius: 4px;
+    }
+
+    .mm-msg-user {
+      background: var(--mm-chat-blue);
+      color: #ffffff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .mm-chat-input {
+      padding: 10px 12px;
+      border-top: 1px solid var(--mm-chat-border);
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #mm-chat-input {
+      flex: 1;
+      border-radius: 999px;
+      border: 1px solid var(--mm-chat-border);
+      padding: 8px 12px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    #mm-chat-input:focus {
+      border-color: var(--mm-chat-blue);
+      box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.18);
+    }
+
+    #mm-chat-send {
+      border-radius: 999px;
+      border: none;
+      padding: 8px 14px;
+      font-size: 14px;
+      font-weight: 500;
+      background: var(--mm-chat-blue);
+      color: #ffffff;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    #mm-chat-send:disabled {
+      opacity: 0.6;
+      cursor: default;
     }
 
     @media (max-width: 640px) {
@@ -212,12 +344,17 @@
       main.content {
         padding: 1rem;
       }
-      .chat-panel {
-        right: 0.75rem;
-        width: 260px;
+
+      #mm-chat-panel {
+        right: 12px;
+        left: 12px;
+        width: auto;
+        height: 65vh;
       }
-      .chat-bubble {
-        right: 0.75rem;
+
+      #mm-chat-launcher {
+        right: 16px;
+        bottom: 16px;
       }
     }
   </style>
@@ -232,8 +369,6 @@
     </a>
     {% if current_user %}
       <div class="topbar-right">
-        <!-- you can show current user name here if you want -->
-        {# <span>{{ current_user.username }}</span> #}
         <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
       </div>
     {% endif %}
@@ -255,58 +390,147 @@
     {% block content %}{% endblock %}
   </main>
 
-  <!-- floating chat -->
-  <div class="chat-bubble" id="chatToggle">💬</div>
-  <div class="chat-panel" id="chatPanel">
-    <header>
-      <span>AI Kitchen Assistant</span>
-      <button style="background:none;border:none;color:#fff;font-weight:bold;cursor:pointer" onclick="toggleChat()">×</button>
-    </header>
-    <div class="chat-body" id="chatBody">
-       <div><strong>AI Kitchen Assistant:</strong> Hi! Ask me anything.</div>
+  <!-- AI Kitchen Assistant widget -->
+  <div id="mm-chat-launcher" aria-label="AI Kitchen Assistant">
+    💬
+  </div>
+
+  <div id="mm-chat-panel" class="mm-chat-closed" aria-label="AI Kitchen Assistant chat">
+    <div class="mm-chat-header">
+      <div class="mm-chat-header-left">
+        <div class="mm-chat-avatar-circle">AI</div>
+        <div class="mm-chat-title">
+          <span class="mm-chat-title-main">AI Kitchen Assistant</span>
+          <span class="mm-chat-title-sub">Ask about menus, inventory, residents</span>
+        </div>
+      </div>
+      <button type="button" class="mm-chat-close" id="mm-chat-close-btn" title="Close">
+        ✕
+      </button>
     </div>
-    <div class="chat-input">
-      <input id="chatMsg" placeholder="Type here..." />
-      <button onclick="sendChat()">Send</button>
+
+    <div class="mm-chat-body" id="mm-chat-body">
+      <div class="mm-msg-row mm-msg-row-bot">
+        <div class="mm-msg-avatar">AI</div>
+        <div class="mm-msg-bubble mm-msg-bot">
+          Hi! I’m your AI Kitchen Assistant. You can ask me about residents,
+          allergies, inventory, or menus and I’ll suggest safe meal ideas.
+        </div>
+      </div>
+    </div>
+
+    <div class="mm-chat-input">
+      <input
+        type="text"
+        id="mm-chat-input"
+        placeholder="Type a message..."
+        autocomplete="off"
+      />
+      <button type="button" id="mm-chat-send">Send</button>
     </div>
   </div>
 
   <script>
-    const chatToggle = document.getElementById('chatToggle');
-    const chatPanel  = document.getElementById('chatPanel');
-    const chatBody   = document.getElementById('chatBody');
-    const chatMsg    = document.getElementById('chatMsg');
+    (function () {
+      const launcher = document.getElementById("mm-chat-launcher");
+      const panel = document.getElementById("mm-chat-panel");
+      const closeBtn = document.getElementById("mm-chat-close-btn");
+      const bodyEl = document.getElementById("mm-chat-body");
+      const inputEl = document.getElementById("mm-chat-input");
+      const sendBtn = document.getElementById("mm-chat-send");
 
-    function toggleChat() {
-      const isOpen = chatPanel.style.display === 'flex';
-      chatPanel.style.display = isOpen ? 'none' : 'flex';
-      if (!isOpen) {
-        chatPanel.style.flexDirection = 'column';
+      function togglePanel(show) {
+        if (show === true) {
+          panel.classList.remove("mm-chat-closed");
+        } else if (show === false) {
+          panel.classList.add("mm-chat-closed");
+        } else {
+          panel.classList.toggle("mm-chat-closed");
+        }
+        if (!panel.classList.contains("mm-chat-closed")) {
+          inputEl.focus();
+        }
       }
-    }
 
-    chatToggle.addEventListener('click', toggleChat);
+      function appendMessage(text, who) {
+        const row = document.createElement("div");
+        row.className =
+          "mm-msg-row " +
+          (who === "user" ? "mm-msg-row-user" : "mm-msg-row-bot");
 
-    async function sendChat() {
-      const text = chatMsg.value.trim();
-      if (!text) return;
-      chatBody.innerHTML += `<div><strong>You:</strong> ${text}</div>`;
-      chatMsg.value = '';
-      chatBody.scrollTop = chatBody.scrollHeight;
+        if (who === "bot") {
+          const avatar = document.createElement("div");
+          avatar.className = "mm-msg-avatar";
+          avatar.textContent = "AI";
+          row.appendChild(avatar);
+        }
 
-      try {
-        const res = await fetch('/chat', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({message: text})
-        });
-        const data = await res.json();
-        chatBody.innerHTML += `<div><strong>AI Kitchen Assistant:</strong> ${data.reply}</div>`;
-      } catch (err) {
-        chatBody.innerHTML += `<div><strong>AI Kitchen Assistant:</strong> Server error.</div>`;
+        const bubble = document.createElement("div");
+        bubble.className =
+          "mm-msg-bubble " +
+          (who === "user" ? "mm-msg-user" : "mm-msg-bot");
+        bubble.textContent = text;
+        row.appendChild(bubble);
+
+        bodyEl.appendChild(row);
+        bodyEl.scrollTop = bodyEl.scrollHeight;
       }
-      chatBody.scrollTop = chatBody.scrollHeight;
-    }
+
+      async function sendMessage() {
+        const text = (inputEl.value || "").trim();
+        if (!text) return;
+
+        appendMessage(text, "user");
+        inputEl.value = "";
+        inputEl.focus();
+        sendBtn.disabled = true;
+
+        try {
+          const resp = await fetch("{{ url_for('chat') }}", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Requested-With": "XMLHttpRequest",
+            },
+            body: JSON.stringify({ message: text }),
+          });
+
+          if (!resp.ok) {
+            appendMessage(
+              "Sorry, I couldn’t reach the AI Kitchen Assistant right now.",
+              "bot"
+            );
+          } else {
+            const data = await resp.json();
+            appendMessage(data.reply || "No reply received.", "bot");
+          }
+        } catch (e) {
+          appendMessage(
+            "Sorry, there was a network error while contacting the assistant.",
+            "bot"
+          );
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      launcher.addEventListener("click", function () {
+        togglePanel();
+      });
+
+      closeBtn.addEventListener("click", function () {
+        togglePanel(false);
+      });
+
+      sendBtn.addEventListener("click", sendMessage);
+
+      inputEl.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          sendMessage();
+        }
+      });
+    })();
   </script>
 
   {% block scripts %}{% endblock %}
