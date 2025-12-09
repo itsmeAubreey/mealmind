@@ -167,200 +167,139 @@ def create_app():
         _try_entra_login()
 
     # ---------------- optional Azure OpenAI chat ----------------
+    # ------------- Azure OpenAI chat -------------
     @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
         """
-        Tiny API endpoint called by the floating widget.
-
-        It gives Azure OpenAI a snapshot of:
-        - current Inventory items (name, unit, quantity, status)
-        - current Residents with diet, fluids, allergies, illnesses, meds
-        - current Menus and their ingredients (mapped to inventory)
-
-        So the assistant can suggest meals that respect allergies/diets
-        and use what is actually in MealMind.
+        AI Kitchen Assistant chat endpoint.
+    
+        - Keeps a short chat history in the user session so follow-up questions make sense.
+        - Gives the model access to:
+            * Inventory items
+            * Residents (with allergies & diets)
+            * Menus scheduled for the next 7 days
         """
-        try:
-            import requests
-        except ImportError:
-            return jsonify(
-                {"reply": "Server: 'requests' package not installed."}
-            ), 500
-
-        data = request.get_json(force=True) or {}
+        data = request.get_json() or {}
         user_message = (data.get("message") or "").strip()
+    
         if not user_message:
-            return jsonify({"reply": "Please type something."})
-
-        # --------- Build inventory snapshot ---------
-        try:
-            inv_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
-        except Exception:
-            inv_items = []
-
-        inv_lines = []
-        for it in inv_items:
-            name = (it.name or "").strip()
-            unit = (it.unit or "").strip()
-            qty = _to_float(getattr(it, "quantity", 0.0), 0.0)
-            low_thr = _to_float(getattr(it, "low_stock_threshold", 0.0), 0.0)
-
-            if qty <= 0:
-                status = "OUT"
-            elif low_thr and qty <= low_thr:
-                status = "LOW"
-            else:
+            return jsonify({"reply": "Please type a question so I can help."})
+    
+        # ---------- Inventory ----------
+        inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
+        if inventory_items:
+            inventory_lines = []
+            for item in inventory_items:
                 status = "OK"
-
-            inv_lines.append(f"- {name} ({unit}): {qty:g} [{status}]")
-
-        inventory_text = (
-            "\n".join(inv_lines) if inv_lines else "No inventory items recorded."
-        )
-
-        # --------- Build residents snapshot ---------
+                if item.quantity is not None and item.quantity <= 0:
+                    status = "OUT_OF_STOCK"
+                elif item.quantity is not None and item.quantity < 1:
+                    status = "LOW"
+                inventory_lines.append(
+                    f"- {item.name} | {item.quantity or 0} {item.unit or ''} | status={status}"
+                )
+            inventory_text = "\n".join(inventory_lines)
+        else:
+            inventory_text = "No inventory items recorded."
+    
+        # ---------- Residents ----------
+        residents = Resident.query.order_by(Resident.last_name.asc(), Resident.first_name.asc()).all()
+        if residents:
+            resident_lines = []
+            for r in residents:
+                allergies = (r.allergies or "").strip() or "None"
+                diet = (r.diet or "").strip() or "Standard"
+                resident_lines.append(
+                    f"- {r.first_name} {r.last_name} | diet={diet} | allergies={allergies}"
+                )
+            residents_text = "\n".join(resident_lines)
+        else:
+            residents_text = "No residents recorded."
+    
+        # ---------- Planned menus for next 7 days ----------
         try:
-            res_rows = Resident.query.order_by(
-                Resident.last_name.asc(), Resident.first_name.asc()
-            ).all()
-        except Exception:
-            res_rows = []
-
-        res_lines = []
-        for r in res_rows:
-            age_val = age_from_date(r.birthday)
-            age_text = f"{age_val} years old" if age_val != "" else "age unknown"
-            meds = (r.medications or "None").strip()
-            illnesses = (r.illnesses or "None").strip()
-            allergies = (r.allergies or "None").strip()
-            fluids = (r.fluids or "Regular").strip()
-            diet = (r.diet or "Regular").strip()
-
-            res_lines.append(
-                f"- {r.first_name} {r.last_name} ({age_text}): "
-                f"Diet = {diet}; Fluids = {fluids}; "
-                f"Allergies = {allergies}; Illnesses = {illnesses}; "
-                f"Medications/Vitamins = {meds}"
+            today = date.today()
+            end_date = today + timedelta(days=7)
+            schedules = (
+                MenuSchedule.query
+                .filter(MenuSchedule.date >= today, MenuSchedule.date <= end_date)
+                .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
+                .all()
             )
-
-        residents_text = (
-            "\n".join(res_lines) if res_lines else "No residents have been added yet."
-        )
-
-        # --------- Build menus snapshot ---------
-        try:
-            menus = Menu.query.order_by(Menu.meal_type.asc(), Menu.title.asc()).all()
         except Exception:
-            menus = []
-
-        menu_lines = []
-        for m in menus:
-            ings = MenuIngredient.query.filter_by(menu_id=m.id).all()
-            if not ings:
-                menu_lines.append(f"- {m.meal_type}: {m.title} (no ingredients listed)")
-                continue
-
-            ing_parts = []
-            for ing in ings:
-                inv = getattr(ing, "inventory_item", None)
-                if not inv and getattr(ing, "inventory_id", None):
-                    inv = InventoryItem.query.get(ing.inventory_id)
-                name = inv.name if inv else f"Item {ing.inventory_id}"
-                qty = _to_float(getattr(ing, "quantity", 0.0), 0.0)
-                unit = (getattr(inv, "unit", "") or "").strip()
-                ing_parts.append(f"{name} {qty:g} {unit}".strip())
-
-            menu_lines.append(
-                f"- {m.meal_type}: {m.title} – ingredients: " + ", ".join(ing_parts)
-            )
-
-        menu_text = (
-            "\n".join(menu_lines) if menu_lines else "No menus have been created yet."
-        )
-
-        # --------- Azure OpenAI config (env vars) ---------
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv(
-            "azure_openai_endpoint"
-        )
-        api_key = (
-            os.getenv("AZURE_OPENAI_API_KEY")
-            or os.getenv("AZURE_OPENAI_KEY")
-            or os.getenv("azure_openai_key")
-        )
-        deployment = (
-            os.getenv("AZURE_OPENAI_DEPLOYMENT")
-            or os.getenv("AZURE_OPENAI_MODEL")
-            or "mealmind-chat"
-        )
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-
-        if not endpoint or not api_key:
-            return jsonify(
-                {"reply": "Azure OpenAI is not configured on the server."}
-            ), 500
-
-        if not endpoint.endswith("/"):
-            endpoint = endpoint + "/"
-
-        url = (
-            f"{endpoint}openai/deployments/{deployment}/chat/completions"
-            f"?api-version={api_version}"
-        )
-        headers = {"Content-Type": "application/json", "api-key": api_key}
-
-        # --------- System prompt combining inventory + residents + menus ---------
-        system_content = f"""
-You are the AI Kitchen Assistant for MealMind, a long-term care kitchen / dietary app.
-
-You have READ-ONLY access to:
-- The current inventory list (name, quantity, unit, low/ok/out status).
-- The list of residents with their age, diet, fluids, allergies, illnesses,
-  and medications/vitamins.
-- The list of reusable menus (Breakfast/Lunch/Dinner) and their ingredients
-  mapped to inventory items.
-
-Use this information when you answer.
-
-Rules:
-- When suggesting meals for a specific resident, ALWAYS respect that resident's Diet
-  and Fluids fields and NEVER include ingredients that appear in their allergy list.
-- When suggesting a menu for everyone, try to avoid ingredients that conflict with
-  ANY resident's allergies.
-- Prefer recipes and menu suggestions that can be made from items that are currently
-  in inventory.
-- When talking about existing menus, prefer using the menus shown below and their
-  ingredients instead of inventing completely new ones, unless the user asks for
-  new ideas.
-- If the user suggests or selects a menu that would conflict with a resident's
-  allergies, clearly explain who is affected and propose safer alternatives based
-  on available inventory items.
-
-INVENTORY (name, unit, quantity, status):
-{inventory_text}
-
-RESIDENTS:
-{residents_text}
-
-MENUS AND INGREDIENTS:
-{menu_text}
-""".strip()
-
-        payload = {
-            "messages": [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.6,
-            "max_tokens": 350,
-        }
-
+            schedules = []
+    
+        if schedules:
+            planned_lines = []
+            for s in schedules:
+                # adjust attribute names if your model differs
+                if getattr(s, "menu", None):
+                    menu_title = s.menu.title
+                else:
+                    menu_title = getattr(s, "menu_title", None) or "Unnamed menu"
+    
+                planned_lines.append(
+                    f"- {s.date.isoformat()} | {s.meal_type} | {menu_title}"
+                )
+            planned_text = "\n".join(planned_lines)
+        else:
+            planned_text = "No menus scheduled in the next 7 days."
+    
+        # ---------- Conversation history (session) ----------
+        history = session.get("chat_history", [])
+        history = history[-10:]  # keep last 10 messages
+    
+        system_prompt = f"""
+    You are the AI Kitchen Assistant for the MealMind app used in a long-term care / retirement home.
+    
+    You MUST base your answers on the structured data below.
+    
+    1) INVENTORY (name | quantity unit | status)
+    {inventory_text}
+    
+    2) RESIDENTS (name | diet | allergies)
+    {residents_text}
+    
+    3) MENUS SCHEDULED FOR THE NEXT 7 DAYS (date | meal | menu title)
+    {planned_text}
+    
+    Rules:
+    - When the user asks about menus for next week or upcoming days, use the scheduled menus list above.
+    - When checking if a menu or recipe is safe, compare each ingredient with the residents' allergies and diets.
+    - If any conflict exists (e.g., peanuts vs peanut allergy), clearly warn and propose safe alternatives
+      using ingredients that are in stock (status not OUT_OF_STOCK).
+    - If the user asks for ideas for one specific resident, respect that resident's diet and allergies first.
+    - If something is truly unknown from the data above, say that clearly instead of guessing.
+    - Keep responses concise but friendly and easy to read.
+    """
+    
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_message})
+    
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=20)
-            resp.raise_for_status()
-            body = resp.json()
-            reply = body["choices"][0]["message"]["content"]
-            return jsonify({"reply": reply})
+            completion = client.chat.completions.create(
+                model=os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get("AZURE_OPENAI_MODEL"),
+                messages=messages,
+                temperature=0.2,
+                max_tokens=500,
+            )
+            reply = completion.choices[0].message.content.strip()
+        except Exception as e:
+            print("AI chat error:", e)
+            reply = "Sorry, I had a problem talking to the AI service. Please try again in a moment."
+    
+        # update history and save back to session
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": reply})
+        session["chat_history"] = history
+    
+        return jsonify({"reply": reply})
+
+
+
+        
         except Exception:
             # Don’t crash the UI if Azure is unreachable
             return (
