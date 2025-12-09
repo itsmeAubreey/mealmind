@@ -166,26 +166,41 @@ def create_app():
     def sync_entra_user():
         _try_entra_login()
 
-    # ---------------- optional Azure OpenAI chat ----------------
-    # ------------- Azure OpenAI chat -------------
+        # ---------------- optional Azure OpenAI chat ----------------
     @app.route("/chat", methods=["POST"])
     @login_required
     def chat():
         """
         AI Kitchen Assistant chat endpoint.
-    
+
         - Keeps a short chat history in the user session so follow-up questions make sense.
         - Gives the model access to:
             * Inventory items
             * Residents (with allergies & diets)
             * Menus scheduled for the next 7 days
         """
+        # Try to import requests without crashing your whole app if it is missing
+        try:
+            import requests
+        except ImportError:
+            return (
+                jsonify(
+                    {
+                        "reply": (
+                            "Server is missing the 'requests' package, so the "
+                            "AI Kitchen Assistant cannot talk to Azure right now."
+                        )
+                    }
+                ),
+                500,
+            )
+
         data = request.get_json() or {}
         user_message = (data.get("message") or "").strip()
-    
+
         if not user_message:
             return jsonify({"reply": "Please type a question so I can help."})
-    
+
         # ---------- Inventory ----------
         inventory_items = InventoryItem.query.order_by(InventoryItem.name.asc()).all()
         if inventory_items:
@@ -202,9 +217,11 @@ def create_app():
             inventory_text = "\n".join(inventory_lines)
         else:
             inventory_text = "No inventory items recorded."
-    
+
         # ---------- Residents ----------
-        residents = Resident.query.order_by(Resident.last_name.asc(), Resident.first_name.asc()).all()
+        residents = Resident.query.order_by(
+            Resident.last_name.asc(), Resident.first_name.asc()
+        ).all()
         if residents:
             resident_lines = []
             for r in residents:
@@ -216,20 +233,21 @@ def create_app():
             residents_text = "\n".join(resident_lines)
         else:
             residents_text = "No residents recorded."
-    
+
         # ---------- Planned menus for next 7 days ----------
         try:
             today = date.today()
             end_date = today + timedelta(days=7)
             schedules = (
-                MenuSchedule.query
-                .filter(MenuSchedule.date >= today, MenuSchedule.date <= end_date)
+                MenuSchedule.query.filter(
+                    MenuSchedule.date >= today, MenuSchedule.date <= end_date
+                )
                 .order_by(MenuSchedule.date.asc(), MenuSchedule.meal_type.asc())
                 .all()
             )
         except Exception:
             schedules = []
-    
+
         if schedules:
             planned_lines = []
             for s in schedules:
@@ -238,63 +256,104 @@ def create_app():
                     menu_title = s.menu.title
                 else:
                     menu_title = getattr(s, "menu_title", None) or "Unnamed menu"
-    
+
                 planned_lines.append(
                     f"- {s.date.isoformat()} | {s.meal_type} | {menu_title}"
                 )
             planned_text = "\n".join(planned_lines)
         else:
             planned_text = "No menus scheduled in the next 7 days."
-    
+
         # ---------- Conversation history (session) ----------
         history = session.get("chat_history", [])
         history = history[-10:]  # keep last 10 messages
-    
+
         system_prompt = f"""
-    You are the AI Kitchen Assistant for the MealMind app used in a long-term care / retirement home.
-    
-    You MUST base your answers on the structured data below.
-    
-    1) INVENTORY (name | quantity unit | status)
-    {inventory_text}
-    
-    2) RESIDENTS (name | diet | allergies)
-    {residents_text}
-    
-    3) MENUS SCHEDULED FOR THE NEXT 7 DAYS (date | meal | menu title)
-    {planned_text}
-    
-    Rules:
-    - When the user asks about menus for next week or upcoming days, use the scheduled menus list above.
-    - When checking if a menu or recipe is safe, compare each ingredient with the residents' allergies and diets.
-    - If any conflict exists (e.g., peanuts vs peanut allergy), clearly warn and propose safe alternatives
-      using ingredients that are in stock (status not OUT_OF_STOCK).
-    - If the user asks for ideas for one specific resident, respect that resident's diet and allergies first.
-    - If something is truly unknown from the data above, say that clearly instead of guessing.
-    - Keep responses concise but friendly and easy to read.
-    """
-    
+You are the AI Kitchen Assistant for the MealMind app used in a long-term care / retirement home.
+
+You MUST base your answers on the structured data below.
+
+1) INVENTORY (name | quantity unit | status)
+{inventory_text}
+
+2) RESIDENTS (name | diet | allergies)
+{residents_text}
+
+3) MENUS SCHEDULED FOR THE NEXT 7 DAYS (date | meal | menu title)
+{planned_text}
+
+Rules:
+- When the user asks about menus for next week or upcoming days, use the scheduled menus list above.
+- When checking if a menu or recipe is safe, compare each ingredient with the residents' allergies and diets.
+- If any conflict exists (e.g., peanuts vs peanut allergy), clearly warn and propose safe alternatives
+  using ingredients that are in stock (status not OUT_OF_STOCK).
+- If the user asks for ideas for one specific resident, respect that resident's diet and allergies first.
+- If something is truly unknown from the data above, say that clearly instead of guessing.
+- Keep responses concise but friendly and easy to read.
+"""
+
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
-    
-        try:
-            completion = client.chat.completions.create(
-                model=os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get("AZURE_OPENAI_MODEL"),
-                messages=messages,
-                temperature=0.2,
-                max_tokens=500,
+
+        # ---------- Call Azure OpenAI via REST ----------
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get(
+            "AZURE_OPENAI_MODEL"
+        )
+        api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+        api_key = os.environ.get("AZURE_OPENAI_KEY") or os.environ.get(
+            "AZURE_OPENAI_API_KEY"
+        )
+
+        if not endpoint or not deployment or not api_key:
+            return (
+                jsonify(
+                    {
+                        "reply": (
+                            "Azure OpenAI configuration is missing (endpoint, deployment, or key). "
+                            "Please check your App Settings in Azure."
+                        )
+                    }
+                ),
+                500,
             )
-            reply = completion.choices[0].message.content.strip()
+
+        url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": api_key,
+        }
+        payload = {
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 500,
+        }
+
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            reply = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            if not reply:
+                reply = "I didn't receive a response from Azure. Please try again."
         except Exception as e:
             print("AI chat error:", e)
-            reply = "Sorry, I had a problem talking to the AI service. Please try again in a moment."
-    
+            reply = (
+                "Sorry, I had a problem talking to the AI service. "
+                "Please try again in a moment."
+            )
+
         # update history and save back to session
         history.append({"role": "user", "content": user_message})
         history.append({"role": "assistant", "content": reply})
         session["chat_history"] = history
-    
+
         return jsonify({"reply": reply})
 
 
